@@ -1,6 +1,8 @@
+
+**File 2: `server.js` (Final Backend Code)**
+```javascript
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
-// Woh extra line yahan se hata di gayi hai
 const socketIO = require('socket.io');
 const http = require('http');
 const qrcode = require('qrcode');
@@ -14,23 +16,29 @@ const io = socketIO(server);
 const port = 3000;
 const KEYWORDS_FILE_PATH = './keywords.json';
 
-// --- Express Server Setup ---
-app.use(express.json());
+// Serve the public folder
 app.use(express.static('public'));
+app.use(express.json());
 
-// API routes for keywords remain the same
+// API routes for keywords
 app.get('/api/keywords', async (req, res) => {
     try {
         const data = await fs.readFile(KEYWORDS_FILE_PATH, 'utf8');
         res.json(JSON.parse(data));
     } catch (error) {
+        // If file doesn't exist, create it with an empty array
+        if (error.code === 'ENOENT') {
+            await fs.writeFile(KEYWORDS_FILE_PATH, '[]', 'utf8');
+            return res.json([]);
+        }
         res.status(500).send('Error reading keywords file');
     }
 });
 
 app.post('/api/keywords', async (req, res) => {
     try {
-        const keywords = JSON.parse(await fs.readFile(KEYWORDS_FILE_PATH, 'utf8'));
+        const data = await fs.readFile(KEYWORDS_FILE_PATH, 'utf8');
+        const keywords = JSON.parse(data);
         const newKeyword = { id: Date.now(), ...req.body };
         keywords.push(newKeyword);
         await fs.writeFile(KEYWORDS_FILE_PATH, JSON.stringify(keywords, null, 2));
@@ -40,107 +48,53 @@ app.post('/api/keywords', async (req, res) => {
     }
 });
 
-app.put('/api/keywords/:id', async (req, res) => {
-    try {
-        let keywords = JSON.parse(await fs.readFile(KEYWORDS_FILE_PATH, 'utf8'));
-        const keywordIndex = keywords.findIndex(k => k.id == req.params.id);
-        if (keywordIndex !== -1) {
-            keywords[keywordIndex] = { ...keywords[keywordIndex], ...req.body };
-            await fs.writeFile(KEYWORDS_FILE_PATH, JSON.stringify(keywords, null, 2));
-            res.json(keywords[keywordIndex]);
-        } else {
-            res.status(404).send('Keyword not found');
-        }
-    } catch (error) {
-        res.status(500).send('Error updating keyword');
-    }
-});
-
-app.delete('/api/keywords/:id', async (req, res) => {
-    try {
-        let keywords = JSON.parse(await fs.readFile(KEYWORDS_FILE_PATH, 'utf8'));
-        keywords = keywords.filter(k => k.id != req.params.id);
-        await fs.writeFile(KEYWORDS_FILE_PATH, JSON.stringify(keywords, null, 2));
-        res.status(204).send();
-    } catch (error) {
-        res.status(500).send('Error deleting keyword');
-    }
-});
-
-// --- Socket.IO Connection for Real-time Updates ---
-io.on('connection', (socket) => {
-    console.log('Web client connected');
-    socket.emit('message', 'Please wait, initializing WhatsApp client...');
-
-    socket.on('disconnect', () => {
-        console.log('Web client disconnected');
-    });
-});
-
-// --- WhatsApp Bot Setup ---
+// --- WhatsApp Bot and Socket.IO Logic ---
 const client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: { headless: true }
-});
-
-client.on('qr', (qr) => {
-    console.log('QR RECEIVED', qr);
-    // Convert QR to a Data URL to be used in an <img> tag
-    qrcode.toDataURL(qr, (err, url) => {
-        if (err) {
-            console.error('Error generating QR code', err);
-            return;
-        }
-        io.emit('qr', url);
-        io.emit('message', 'QR Code received, please scan.');
-    });
-});
-
-client.on('ready', () => {
-    console.log('WhatsApp Client is ready!');
-    io.emit('ready');
-    io.emit('message', 'WhatsApp is connected and ready!');
-});
-
-client.on('authenticated', () => {
-    console.log('AUTHENTICATED');
-    io.emit('message', 'Authentication successful!');
-});
-
-client.on('auth_failure', (msg) => {
-    console.error('AUTHENTICATION FAILURE', msg);
-    io.emit('message', 'Authentication failed. Please restart the server.');
-});
-
-client.on('disconnected', (reason) => {
-    console.log('Client was logged out', reason);
-    io.emit('disconnected');
-    io.emit('message', 'WhatsApp client was disconnected.');
-});
-
-// Message handling logic remains the same
-client.on('message', async (message) => {
-    try {
-        const keywords = JSON.parse(await fs.readFile(KEYWORDS_FILE_PATH, 'utf8'));
-        const incomingMessage = message.body.toLowerCase();
-        for (const item of keywords) {
-            const keyword = item.keyword.toLowerCase();
-            const matchType = item.match_type || 'exact';
-            if ((matchType === 'exact' && incomingMessage === keyword) ||
-                (matchType === 'contains' && incomingMessage.includes(keyword))) {
-                message.reply(item.reply);
-                return;
-            }
-        }
-    } catch (error) {
-        console.error('Error processing message:', error);
+    puppeteer: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Important for Linux servers
     }
 });
 
-// Initialize the client
-client.initialize().catch(err => console.log(err));
+io.on('connection', (socket) => {
+    console.log('A user connected to the web panel.');
 
-// Use server.listen instead of app.listen
+    // Send initial status
+    socket.emit('message', 'Initializing...');
+
+    client.on('qr', (qr) => {
+        console.log('QR Code generated. Sending to web client.');
+        qrcode.toDataURL(qr, (err, url) => {
+            if (err) {
+                console.error('Failed to generate QR Data URL', err);
+            } else {
+                socket.emit('qr', url); // Send QR code to the connected user
+                socket.emit('message', 'Please scan the QR Code with WhatsApp.');
+            }
+        });
+    });
+
+    client.on('ready', () => {
+        console.log('Client is ready!');
+        socket.emit('ready'); // Notify client that it's ready
+        socket.emit('message', 'WhatsApp is connected successfully!');
+    });
+    
+    client.on('disconnected', (reason) => {
+        socket.emit('disconnected');
+        socket.emit('message', 'Client was disconnected. Please refresh the page.');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected from the web panel.');
+    });
+});
+
+// Initialize the client only once
+client.initialize().catch(err => console.error("Client initialization error:", err));
+
+// Start the server
 server.listen(port, () => {
-    console.log(`Web panel listening at http://localhost:${port}`);
+    console.log(`Server with Web Panel is running on http://localhost:${port}`);
 });
