@@ -2,84 +2,190 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <title>WhatsApp Bot Login</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Bot Manager</title>
     <style>
-        body { font-family: system-ui, sans-serif; background-color: #f0f2f5; color: #1c1e21; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; text-align: center; }
+        body { font-family: system-ui, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .container { max-width: 800px; width: 90%; padding: 24px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
-        h1, h2 { border-bottom: 1px solid #dddfe2; padding-bottom: 15px; }
-        #status-box { padding: 12px; margin-bottom: 20px; border-radius: 6px; background-color: #e7f3ff; color: #1877f2; font-weight: bold; }
-        #qr-container img { max-width: 320px; width: 100%; height: auto; margin-top: 15px; border: 1px solid #dddfe2; padding: 8px; border-radius: 8px;}
         .hidden { display: none; }
-        /* Add other styles for form and keyword list */
-        .form-container { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 25px; text-align: left;}
-        .form-container input, .form-container select, .form-container button { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        .center-text { text-align: center; }
+        input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        button { background-color: #1877f2; color: white; cursor: pointer; border-color: #1877f2; }
+        #logout-btn { background-color: #dc3545; border-color: #dc3545; position: absolute; top: 15px; right: 15px; width: auto; padding: 8px 15px;}
+        #status-box { padding: 12px; margin-bottom: 20px; border-radius: 6px; background-color: #e7f3ff; color: #1877f2; font-weight: bold; }
+        #qrcode-image { max-width: 320px; width: 100%; height: auto; margin: 15px auto; display: block; }
         .keyword-item { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; border-bottom: 1px solid #dddfe2; align-items: center; text-align: left; }
         .keyword-item .actions { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }
+        .keyword-item .actions button { width: auto; font-size: 14px; padding: 6px 10px; }
+        .delete-btn { background-color: #fae0e0; color: #dc3545; border-color: #fae0e0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>WhatsApp Bot Manager</h1>
-        <div id="status-box">Connecting to server...</div>
-
-        <!-- This section will show the QR Code -->
-        <div id="qr-container">
-            <p>Please wait for the QR code to appear...</p>
-            <img id="qrcode-image" class="hidden" src="" alt="Scan this QR Code">
+        <!-- View 1: Login Form -->
+        <div id="login-container" class="center-text hidden">
+            <h1>Login to Bot Panel</h1>
+            <input type="text" id="username" placeholder="Username" value="admin">
+            <input type="password" id="password" placeholder="Password" value="password123">
+            <button id="login-btn">Login</button>
+            <p id="login-error" style="color:red; height: 20px;"></p>
         </div>
 
-        <!-- This section will show after successful login -->
-        <div id="keywords-manager" class="hidden">
-            <!-- Keyword management form and list will be here -->
+        <!-- View 2: Main Application (QR and Keywords) -->
+        <div id="main-app" class="hidden">
+            <button id="logout-btn">Logout</button>
+            <h1 class="center-text">WhatsApp Bot Manager</h1>
+            <div id="status-box" class="center-text">Connecting...</div>
+            <div id="qr-container" class="center-text hidden">
+                <p>Please scan the QR code with WhatsApp.</p>
+                <img id="qrcode-image" src="">
+            </div>
+            <div id="keywords-manager" class="hidden">
+                <!-- Keywords content will be inserted here by JavaScript -->
+            </div>
         </div>
     </div>
 
-    <!-- This must be here to connect to the backend -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const socket = io();
+            const loginContainer = document.getElementById('login-container');
+            const mainApp = document.getElementById('main-app');
+            const loginBtn = document.getElementById('login-btn');
+            const logoutBtn = document.getElementById('logout-btn');
+            const loginError = document.getElementById('login-error');
 
-            const statusBox = document.getElementById('status-box');
-            const qrContainer = document.getElementById('qr-container');
-            const qrcodeImage = document.getElementById('qrcode-image');
-            const keywordsManager = document.getElementById('keywords-manager');
+            const showLogin = () => { mainApp.classList.add('hidden'); loginContainer.classList.remove('hidden'); };
+            const showMainApp = () => { loginContainer.classList.add('hidden'); mainApp.classList.remove('hidden'); initializeSocketAndKeywords(); };
 
-            // Listen for messages from the server
-            socket.on('message', (msg) => {
-                statusBox.textContent = msg;
+            // Check login status on page load
+            fetch('/api/auth-status').then(res => res.json()).then(data => {
+                data.loggedIn ? showMainApp() : showLogin();
             });
 
-            // Listen for the 'qr' event from the server
-            socket.on('qr', (url) => {
-                qrcodeImage.src = url; // Set the image source to the QR code data
-                qrcodeImage.classList.remove('hidden');
-                keywordsManager.classList.add('hidden'); // Hide manager
+            // Login button action
+            loginBtn.addEventListener('click', async () => {
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (response.ok) {
+                    showMainApp();
+                } else {
+                    const data = await response.json();
+                    loginError.textContent = data.message || 'Login failed!';
+                }
             });
 
-            // Listen for the 'ready' event
-            socket.on('ready', () => {
-                statusBox.textContent = 'WhatsApp is connected! You can manage keywords now.';
-                qrContainer.classList.add('hidden'); // Hide QR container
-                loadKeywordsManager(); // Load the keywords section
+            // Logout button action
+            logoutBtn.addEventListener('click', async () => {
+                await fetch('/logout');
+                showLogin();
+                location.reload(); // Reload to clear socket connection
             });
 
-            // Listen for disconnection
-            socket.on('disconnected', () => {
-                statusBox.textContent = 'Client Disconnected. Please refresh the page to reconnect.';
-                keywordsManager.classList.add('hidden');
-                qrContainer.classList.remove('hidden');
-            });
-            
-            function loadKeywordsManager() {
+            // This function runs only after a successful login
+            function initializeSocketAndKeywords() {
+                const socket = io();
+                const statusBox = document.getElementById('status-box');
+                const qrContainer = document.getElementById('qr-container');
+                const qrcodeImage = document.getElementById('qrcode-image');
+                const keywordsManager = document.getElementById('keywords-manager');
+
+                socket.on('qr', (url) => {
+                    statusBox.textContent = 'Please scan the QR Code.';
+                    qrcodeImage.src = url;
+                    qrContainer.classList.remove('hidden');
+                    keywordsManager.classList.add('hidden');
+                });
+
+                socket.on('ready', () => {
+                    statusBox.textContent = 'WhatsApp is connected!';
+                    qrContainer.classList.add('hidden');
+                    loadKeywordsManager();
+                });
+
+                socket.on('disconnected', () => {
+                    statusBox.textContent = 'Disconnected. Please refresh to reconnect.';
+                    keywordsManager.classList.add('hidden');
+                    qrContainer.classList.remove('hidden');
+                });
+            }
+
+            // This function loads the HTML and logic for the keyword manager
+            async function loadKeywordsManager() {
                 keywordsManager.classList.remove('hidden');
-                // You can add your keyword management html and logic here
                 keywordsManager.innerHTML = `
-                    <h2>Keyword Manager</h2>
-                    <p>Add, edit, or remove keywords for auto-reply.</p>
-                    <!-- Your form and list HTML would go here -->
+                    <h2 class="center-text">Keyword Manager</h2>
+                    <div class="form-container">
+                         <input type="text" id="keyword-input" placeholder="Keyword or Phrase">
+                         <input type="text" id="reply-input" placeholder="Bot's Reply Message">
+                         <select id="match-type-select">
+                            <option value="exact">Exact Match</option>
+                            <option value="contains">Contains Match</option>
+                         </select>
+                         <button id="save-btn">Add Keyword</button>
+                    </div>
+                    <h3>Saved Keywords</h3>
+                    <div id="keywords-list"></div>
                 `;
+                
+                const keywordsList = document.getElementById('keywords-list');
+                const saveBtn = document.getElementById('save-btn');
+                const keywordInput = document.getElementById('keyword-input');
+                const replyInput = document.getElementById('reply-input');
+                const matchTypeSelect = document.getElementById('match-type-select');
+
+                const fetchKeywords = async () => {
+                    try {
+                        const response = await fetch('/api/keywords');
+                        const keywords = await response.json();
+                        keywordsList.innerHTML = '';
+                        keywords.forEach(k => {
+                            const item = document.createElement('div');
+                            item.className = 'keyword-item';
+                            item.innerHTML = `
+                                <span><strong>Keyword:</strong><br>${k.keyword}</span>
+                                <span><strong>Reply:</strong><br>${k.reply} (${k.match_type})</span>
+                                <div class="actions">
+                                    <button class="delete-btn" data-id="${k.id}">Delete</button>
+                                </div>`;
+                            keywordsList.appendChild(item);
+                        });
+                    } catch (error) {
+                        console.error('Failed to fetch keywords', error);
+                        keywordsList.innerHTML = '<p style="color:red">Could not load keywords. Are you logged in?</p>';
+                    }
+                };
+
+                saveBtn.addEventListener('click', async () => {
+                    const keyword = keywordInput.value.trim();
+                    const reply = replyInput.value.trim();
+                    if (!keyword || !reply) return alert('Please fill all fields.');
+                    await fetch('/api/keywords', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keyword, reply, match_type: matchTypeSelect.value })
+                    });
+                    keywordInput.value = '';
+                    replyInput.value = '';
+                    fetchKeywords();
+                });
+
+                keywordsList.addEventListener('click', async (e) => {
+                    if (e.target.classList.contains('delete-btn')) {
+                        const id = e.target.dataset.id;
+                        if (confirm('Are you sure you want to delete this keyword?')) {
+                            await fetch(`/api/keywords/${id}`, { method: 'DELETE' });
+                            fetchKeywords();
+                        }
+                    }
+                });
+
+                fetchKeywords();
             }
         });
     </script>
