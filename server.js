@@ -4,7 +4,7 @@ const session = require('express-session');
 const socketIO = require('socket.io');
 const http = require('http');
 const qrcode = require('qrcode');
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 
 // --- Basic Setup ---
@@ -12,127 +12,201 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 const port = 3000;
-const KEYWORDS_FILE_PATH = './keywords.json';
 
-// --- Credentials (Inhe aap badal sakte hain) ---
+// --- In-memory storage ---
+const clients = {};
+const clientStatuses = {}; // NAYA: Har client ka status store karega
+
+// --- Helper Functions ---
+const getKeywordsPath = (clientId) => path.join(__dirname, `keywords_${clientId}.json`);
+const getSessionPath = () => path.join(__dirname, '.wwebjs_auth');
+
+// --- Credentials & Session ---
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "password123";
-
-// --- Middlewares ---
-app.use(express.static('public')); // 'public' folder ko serve karein
-app.use(express.json()); // JSON requests ko parse karein
-app.use(express.urlencoded({ extended: true })); // Form data ko parse karein
-
-// Session Middleware
+app.use(express.static('public'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(session({
-    secret: 'a-very-long-and-random-secret-key-for-session', // Isko ek random string se zaroor badlein
+    secret: 'a-very-super-secret-key-for-multi-device',
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 } // Session 24 ghante tak valid rahega
+    cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
+const checkAuth = (req, res, next) => req.session.loggedIn ? next() : res.status(401).json({ error: 'Unauthorized' });
 
-// Middleware to check if user is logged in
-const checkAuth = (req, res, next) => {
-    if (req.session.loggedIn) {
-        next(); // Logged in hai, to aage badhne do
-    } else {
-        res.status(401).json({ error: 'Unauthorized' }); // Logged in nahi hai, to error do
-    }
-};
-
-// --- Authentication Routes ---
+// --- Auth Routes ---
+app.post('/login', (req, res) => { /* ... (Pehle jaisa hi) ... */ });
+app.get('/logout', (req, res) => { /* ... (Pehle jaisa hi) ... */ });
+app.get('/api/auth-status', (req, res) => { /* ... (Pehle jaisa hi) ... */ });
+// Auth routes from previous code
 app.post('/login', (req, res) => {
     const { username, password } = req.body;
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-        req.session.loggedIn = true; // Session mein login status set karo
+        req.session.loggedIn = true;
         res.json({ success: true });
     } else {
         res.status(401).json({ success: false, message: 'Invalid Credentials' });
     }
 });
+app.get('/logout', (req, res) => req.session.destroy(() => res.json({ success: true })));
+app.get('/api/auth-status', (req, res) => res.json({ loggedIn: !!req.session.loggedIn }));
 
-app.get('/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.json({ success: true });
-    });
+
+// --- Device Management API (Updated) ---
+app.get('/api/devices', checkAuth, (req, res) => {
+    const sessionDir = getSessionPath();
+    if (!fs.existsSync(sessionDir)) {
+        return res.json([]);
+    }
+    const deviceDirs = fs.readdirSync(sessionDir)
+        .filter(file => file.startsWith('session-'))
+        .map(file => {
+            const clientId = file.substring(8);
+            return {
+                id: clientId,
+                status: clientStatuses[clientId] || 'Disconnected' // Status bhi bhejein
+            };
+        });
+    res.json(deviceDirs);
 });
 
-// Route to check current authentication status
-app.get('/api/auth-status', (req, res) => {
-    res.json({ loggedIn: !!req.session.loggedIn });
+// NAYA: API to disconnect a device
+app.post('/api/disconnect/:clientId', checkAuth, async (req, res) => {
+    const { clientId } = req.params;
+    const client = clients[clientId];
+    if (client) {
+        await client.logout(); // whatsapp-web.js ka logout function
+        res.json({ success: true, message: `Disconnecting ${clientId}.` });
+    } else {
+        res.status(404).json({ success: false, message: 'Device not found or not running.' });
+    }
 });
 
-// --- Protected API Routes for Keywords ---
-app.get('/api/keywords', checkAuth, async (req, res) => {
+// --- Keyword Management API (Pehle jaisa hi) ---
+app.get('/api/keywords/:clientId', checkAuth, async (req, res) => { /* ... */ });
+app.post('/api/keywords/:clientId', checkAuth, async (req, res) => { /* ... */ });
+// Full keyword API code
+app.get('/api/keywords/:clientId', checkAuth, async (req, res) => {
+    const { clientId } = req.params;
+    const filePath = getKeywordsPath(clientId);
     try {
-        const data = await fs.readFile(KEYWORDS_FILE_PATH, 'utf8');
+        const data = await fs.promises.readFile(filePath, 'utf8');
         res.json(JSON.parse(data));
     } catch (error) {
         if (error.code === 'ENOENT') {
-            await fs.writeFile(KEYWORDS_FILE_PATH, '[]', 'utf8');
+            await fs.promises.writeFile(filePath, '[]', 'utf8');
             return res.json([]);
         }
-        res.status(500).send('Error reading keywords file');
+        res.status(500).send(`Error reading keywords for ${clientId}`);
     }
 });
-
-app.post('/api/keywords', checkAuth, async (req, res) => {
+app.post('/api/keywords/:clientId', checkAuth, async (req, res) => {
+    const { clientId } = req.params;
+    const filePath = getKeywordsPath(clientId);
     try {
-        let keywords = JSON.parse(await fs.readFile(KEYWORDS_FILE_PATH, 'utf8'));
+        let keywords = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
         const newKeyword = { id: Date.now(), ...req.body };
         keywords.push(newKeyword);
-        await fs.writeFile(KEYWORDS_FILE_PATH, JSON.stringify(keywords, null, 2));
+        await fs.promises.writeFile(filePath, JSON.stringify(keywords, null, 2));
         res.status(201).json(newKeyword);
     } catch (error) {
-        res.status(500).send('Error saving keyword');
+        res.status(500).send(`Error saving keyword for ${clientId}`);
     }
 });
 
-app.delete('/api/keywords/:id', checkAuth, async (req, res) => {
-    try {
-        let keywords = JSON.parse(await fs.readFile(KEYWORDS_FILE_PATH, 'utf8'));
-        keywords = keywords.filter(k => k.id != req.params.id);
-        await fs.writeFile(KEYWORDS_FILE_PATH, JSON.stringify(keywords, null, 2));
-        res.status(204).send();
-    } catch (error) {
-        res.status(500).send('Error deleting keyword');
-    }
-});
 
-// --- WhatsApp Client and Socket.IO Logic ---
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] }
-});
+// --- Function to Create and Initialize a WhatsApp Client (Updated) ---
+function initializeClient(clientId) {
+    if (clients[clientId]) return;
+    console.log(`Initializing client for: ${clientId}`);
+    clientStatuses[clientId] = 'Initializing'; // NAYA: Set initial status
+    io.emit('statusUpdate', { clientId, status: clientStatuses[clientId] });
 
-io.on('connection', (socket) => {
-    console.log('A user connected to the web panel.');
+    const client = new Client({
+        authStrategy: new LocalAuth({ clientId }),
+        puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+    });
 
-    client.on('qr', (qr) => qrcode.toDataURL(qr, (err, url) => {
-        if (!err) socket.emit('qr', url);
-    }));
-    client.on('ready', () => socket.emit('ready'));
-    client.on('disconnected', () => socket.emit('disconnected'));
-});
+    client.on('qr', (qr) => {
+        console.log(`QR received for ${clientId}`);
+        clientStatuses[clientId] = 'Needs QR Scan'; // NAYA: Update status
+        io.emit('statusUpdate', { clientId, status: clientStatuses[clientId] });
+        qrcode.toDataURL(qr, (err, url) => {
+            if (!err) io.emit('qr', { clientId, url });
+        });
+    });
 
-client.on('message', async (message) => {
-    try {
-        const data = await fs.readFile(KEYWORDS_FILE_PATH, 'utf8');
-        const keywords = JSON.parse(data);
-        const incomingMessage = message.body.toLowerCase();
-        for (const item of keywords) {
-            const keyword = item.keyword.toLowerCase();
-            const matchType = item.match_type || 'exact';
-            if ((matchType === 'exact' && incomingMessage === keyword) || (matchType === 'contains' && incomingMessage.includes(keyword))) {
-                message.reply(item.reply);
-                return;
+    client.on('ready', () => {
+        console.log(`Client is ready for ${clientId}!`);
+        clientStatuses[clientId] = 'Connected'; // NAYA: Update status
+        io.emit('statusUpdate', { clientId, status: clientStatuses[clientId] });
+        io.emit('ready', { clientId });
+    });
+
+    client.on('disconnected', (reason) => {
+        console.log(`Client for ${clientId} was logged out`, reason);
+        clientStatuses[clientId] = 'Disconnected'; // NAYA: Update status
+        io.emit('statusUpdate', { clientId, status: clientStatuses[clientId] });
+        delete clients[clientId]; // Memory se client instance ko remove karein
+    });
+
+    client.on('message', async (message) => { /* ... (Pehle jaisa hi) ... */ });
+    // Full message handler
+    client.on('message', async (message) => {
+        const keywordsPath = getKeywordsPath(clientId);
+        try {
+            const data = await fs.promises.readFile(keywordsPath, 'utf8');
+            const keywords = JSON.parse(data);
+            const incomingMessage = message.body.toLowerCase();
+            for (const item of keywords) {
+                const keyword = item.keyword.toLowerCase();
+                const matchType = item.match_type || 'exact';
+                if ((matchType === 'exact' && incomingMessage === keyword) || (matchType === 'contains' && incomingMessage.includes(keyword))) {
+                    message.reply(item.reply);
+                    return;
+                }
             }
+        } catch (error) {
+            if (error.code !== 'ENOENT') console.error(`Error processing message for ${clientId}:`, error);
         }
-    } catch (error) {
-        if (error.code !== 'ENOENT') console.error('Error processing message:', error);
-    }
-});
+    });
 
-// --- Start Server and Client ---
-client.initialize().catch(console.error);
-server.listen(port, () => console.log(`Server running on http://localhost:${port}`));
+
+    client.initialize().catch(err => {
+        console.error(`Failed to initialize client ${clientId}:`, err)
+        clientStatuses[clientId] = 'Failed';
+        io.emit('statusUpdate', { clientId, status: clientStatuses[clientId] });
+    });
+    clients[clientId] = client;
+}
+
+// --- Socket.IO Connection and Server Startup (Pehle jaisa hi) ---
+io.on('connection', (socket) => { /* ... */ });
+function reinitializeExistingSessions() { /* ... */ }
+server.listen(port, () => { /* ... */ });
+// Full code for these sections
+io.on('connection', (socket) => {
+    socket.on('add-device', (data) => {
+        const { clientId } = data;
+        if (clientId && !clients[clientId]) {
+            initializeClient(clientId);
+            socket.emit('message', `Starting new device: ${clientId}. Please wait for QR code.`);
+        } else {
+            socket.emit('message', `Device ID ${clientId} is invalid or already running.`);
+        }
+    });
+});
+function reinitializeExistingSessions() {
+    console.log('Re-initializing existing sessions...');
+    const sessionDir = getSessionPath();
+    if (!fs.existsSync(sessionDir)) return;
+    const deviceDirs = fs.readdirSync(sessionDir)
+        .filter(file => file.startsWith('session-'))
+        .map(file => file.substring(8));
+    deviceDirs.forEach(clientId => initializeClient(clientId));
+}
+server.listen(port, () => {
+    console.log(`Server with Multi-Device support running on http://localhost:${port}`);
+    reinitializeExistingSessions();
+});
