@@ -4,25 +4,300 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Bot - Keyword Manager</title>
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 24px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #1c1e21;
+            border-bottom: 1px solid #dddfe2;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .form-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding: 20px;
+            background-color: #f7f8fa;
+            border-radius: 6px;
+        }
+
+        .form-container input[type="text"],
+        .form-container select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccd0d5;
+            border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        .form-container input[type="text"]:focus,
+        .form-container select:focus {
+            outline: none;
+            border-color: #1877f2;
+            box-shadow: 0 0 0 2px #e7f3ff;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        #save-btn {
+            grid-column: 1 / -1;
+            padding: 12px 20px;
+            background-color: #1877f2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #save-btn:hover {
+            background-color: #166fe5;
+        }
+        
+        #cancel-btn {
+            grid-column: 1 / -1;
+            padding: 12px 20px;
+            background-color: #f0f2f5;
+            color: #4b4f56;
+            border: 1px solid #ccd0d5;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: none; /* Hidden by default */
+        }
+
+        #cancel-btn:hover {
+            background-color: #e4e6e9;
+        }
+
+        .keyword-item {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 15px;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #dddfe2;
+        }
+
+        .keyword-item:last-child {
+            border-bottom: none;
+        }
+
+        .keyword-item span {
+            word-break: break-word;
+        }
+
+        .keyword-item .actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .keyword-item button {
+            padding: 8px 12px;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .edit-btn {
+            background-color: #e7f3ff;
+            color: #1877f2;
+        }
+        .edit-btn:hover {
+            background-color: #dceaf7;
+        }
+
+        .delete-btn {
+            background-color: #fae0e0;
+            color: #dc3545;
+        }
+        .delete-btn:hover {
+            background-color: #f4c7c7;
+        }
+
+    </style>
 </head>
 <body>
     <div class="container">
-        <h1>Keyword Manager</h1>
+        <h1>WhatsApp Bot Keyword Manager</h1>
+
         <div class="form-container">
             <input type="hidden" id="edit-id">
-            <input type="text" id="keyword-input" placeholder="Keyword">
-            <input type="text" id="reply-input" placeholder="Reply">
-            <select id="match-type-select">
-                <option value="exact">Exact Match</option>
-                <option value="contains">Contains Match</option>
-            </select>
-            <button id="save-btn">Save Keyword</button>
+            <div class="full-width">
+                <input type="text" id="keyword-input" placeholder="Keyword or Phrase">
+            </div>
+            <div class="full-width">
+                <input type="text" id="reply-input" placeholder="Bot's Reply Message">
+            </div>
+            <div>
+                <select id="match-type-select">
+                    <option value="exact">Exact Match</option>
+                    <option value="contains">Contains Match</option>
+                </select>
+            </div>
+            <button id="save-btn" class="full-width">Add Keyword</button>
+            <button id="cancel-btn" class="full-width">Cancel Edit</button>
         </div>
+
+        <h2>Saved Keywords</h2>
         <div id="keywords-list"></div>
     </div>
+
     <script>
-        // Client-side JavaScript will go here
+        document.addEventListener('DOMContentLoaded', () => {
+            const keywordsList = document.getElementById('keywords-list');
+            const saveBtn = document.getElementById('save-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const keywordInput = document.getElementById('keyword-input');
+            const replyInput = document.getElementById('reply-input');
+            const matchTypeSelect = document.getElementById('match-type-select');
+            const editIdInput = document.getElementById('edit-id');
+
+            // --- Functions to clear and reset the form ---
+            const resetForm = () => {
+                keywordInput.value = '';
+                replyInput.value = '';
+                matchTypeSelect.value = 'exact';
+                editIdInput.value = '';
+                saveBtn.textContent = 'Add Keyword';
+                cancelBtn.style.display = 'none';
+            };
+
+            // --- Function to fetch and display keywords ---
+            const fetchKeywords = async () => {
+                try {
+                    const response = await fetch('/api/keywords');
+                    if (!response.ok) throw new Error('Failed to fetch keywords');
+                    const keywords = await response.json();
+
+                    keywordsList.innerHTML = ''; // Clear current list
+                    if (keywords.length === 0) {
+                        keywordsList.innerHTML = '<p>No keywords defined yet. Add one using the form above.</p>';
+                        return;
+                    }
+
+                    keywords.forEach(k => {
+                        const item = document.createElement('div');
+                        item.className = 'keyword-item';
+                        item.innerHTML = `
+                            <div>
+                                <strong>Keyword:</strong><br>
+                                <span>${k.keyword}</span>
+                            </div>
+                            <div>
+                                <strong>Reply:</strong><br>
+                                <span>${k.reply}</span>
+                            </div>
+                            <div class="actions">
+                                <button class="edit-btn" onclick="window.editKeyword('${k.id}', '${k.keyword.replace(/'/g, "\\'")}', '${k.reply.replace(/'/g, "\\'")}', '${k.match_type}')">Edit</button>
+                                <button class="delete-btn" onclick="window.deleteKeyword('${k.id}')">Delete</button>
+                            </div>
+                        `;
+                        // A small tag to show match type
+                        const matchTypeTag = document.createElement('span');
+                        matchTypeTag.textContent = `Match: ${k.match_type}`;
+                        matchTypeTag.style.gridColumn = '1 / 2';
+                        matchTypeTag.style.fontSize = '12px';
+                        matchTypeTag.style.color = '#606770';
+                        item.appendChild(matchTypeTag);
+                        
+                        keywordsList.appendChild(item);
+                    });
+                } catch (error) {
+                    keywordsList.innerHTML = `<p style="color: red;">${error.message}</p>`;
+                }
+            };
+
+            // --- Event Listeners ---
+            saveBtn.addEventListener('click', async () => {
+                const id = editIdInput.value;
+                const keyword = keywordInput.value.trim();
+                const reply = replyInput.value.trim();
+                const match_type = matchTypeSelect.value;
+
+                if (!keyword || !reply) {
+                    alert('Please fill in both Keyword and Reply fields.');
+                    return;
+                }
+
+                const url = id ? `/api/keywords/${id}` : '/api/keywords';
+                const method = id ? 'PUT' : 'POST';
+
+                try {
+                    const response = await fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keyword, reply, match_type })
+                    });
+
+                    if (!response.ok) throw new Error('Failed to save keyword.');
+
+                    resetForm();
+                    fetchKeywords();
+                } catch (error) {
+                    alert(error.message);
+                }
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                resetForm();
+            });
+
+            // --- Global functions to be called from HTML ---
+            window.editKeyword = (id, keyword, reply, match_type) => {
+                editIdInput.value = id;
+                keywordInput.value = keyword;
+                replyInput.value = reply;
+                matchTypeSelect.value = match_type;
+
+                saveBtn.textContent = 'Update Keyword';
+                cancelBtn.style.display = 'block';
+                window.scrollTo(0, 0); // Scroll to top to see the form
+            };
+
+            window.deleteKeyword = async (id) => {
+                if (confirm('Are you sure you want to delete this keyword?')) {
+                    try {
+                        const response = await fetch(`/api/keywords/${id}`, { method: 'DELETE' });
+                        if (!response.ok) throw new Error('Failed to delete keyword.');
+                        fetchKeywords();
+                    } catch (error) {
+                        alert(error.message);
+                    }
+                }
+            };
+
+            // --- Initial Load ---
+            fetchKeywords();
+        });
     </script>
 </body>
 </html>
