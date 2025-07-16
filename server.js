@@ -1,6 +1,6 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
-const { body, validationResult } = require('express-validator');
+// Woh extra line yahan se hata di gayi hai
 const socketIO = require('socket.io');
 const http = require('http');
 const qrcode = require('qrcode');
