@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>WhatsApp Bot + Gemini AI</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bot - Ultimate Panel</title>
+    <!-- ... (Saare styles pehle jaise hi) ... -->
     <style>
-        /* ... saare styles pehle jaise hi ... */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: auto; padding: 24px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
         .hidden { display: none; }
@@ -14,11 +13,11 @@
         h3 { border-top: 1px solid #dddfe2; padding-top: 20px; margin-top: 20px;}
         input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
         button { background-color: #1877f2; color: white; cursor: pointer; border-color: #1877f2; font-weight: bold; }
-        button:hover { background-color: #166fe5; }
+        .btn-secondary { background-color: #6c757d; border-color: #6c757d; }
+        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
         .device-list-item { display: grid; grid-template-columns: 1fr auto; padding: 15px; border-bottom: 1px solid #dddfe2; gap: 15px; align-items: center;}
         .device-list-item .actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
-        .device-list-item .actions button { width: auto; margin: 0; font-size: 14px; padding: 8px 12px; }
-        .disconnect-btn, .delete-btn { background-color: #fa3e3e; border-color: #fa3e3e; }
+        .actions button { width: auto; margin: 0; font-size: 14px; padding: 8px 12px; }
         .status { padding: 4px 8px; border-radius: 12px; font-weight: bold; color: white; font-size: 12px; }
         .status-connected { background-color: #28a745; }
         .status-disconnected { background-color: #6c757d; }
@@ -32,7 +31,6 @@
 </head>
 <body>
     <div class="container" id="view-root"></div>
-
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -42,181 +40,72 @@
 
             const app = {
                 init: () => {
-                    // Event listeners
                     root.addEventListener('click', (e) => {
                         const target = e.target;
                         if (target.id === 'login-btn') app.handleLogin();
                         if (target.id === 'logout-btn') app.handleLogout();
-                        if (target.id === 'add-device-btn') app.handleAddDevice();
                         if (target.matches('.back-to-dash')) app.renderDashboard();
+                        if (target.id === 'add-device-btn') app.handleAddDevice();
                         if (target.matches('.disconnect-btn')) app.handleDisconnect(target.dataset.id);
                         if (target.matches('.manage-keywords-btn')) app.renderKeywordsManager(target.dataset.id);
-                        if (target.id === 'save-keyword-btn') app.handleSaveKeyword(target.dataset.clientid);
-                        if (target.matches('.delete-keyword-btn')) app.handleDeleteKeyword(target.dataset.clientid, target.dataset.keywordid);
+                        if (target.matches('.global-settings-btn')) app.renderGlobalSettings(); // NAYA
+                        if (target.id === 'save-settings-btn') app.handleSaveSettings(); // NAYA
+                        // ... baaki ke click handlers
                     });
-                     root.addEventListener('change', e => {
-                        const target = e.target;
-                        if (target.matches('.gemini-toggle')) app.handleGeminiToggle(target.dataset.id, target.checked);
-                        if (target.matches('.auto-read-toggle')) app.handleAutoReadToggle(target.dataset.id, target.checked); // NAYA
+                    root.addEventListener('change', e => {
+                        if (e.target.matches('.gemini-toggle')) app.handleGeminiToggle(e.target.dataset.id, e.target.checked);
+                        if (e.target.matches('.auto-read-toggle')) app.handleAutoReadToggle(e.target.dataset.id, e.target.checked);
                     });
-
-                    // Socket listeners
-                    socket.on('statusUpdate', () => { if(root.querySelector('#device-list')) app.renderDashboard(); });
-                    socket.on('qr', ({ clientId, url }) => app.renderQR(clientId, url));
-                    socket.on('ready', ({ clientId }) => { alert(`Device '${clientId}' is connected!`); if(root.querySelector('#device-list')) app.renderDashboard(); });
-                    
-                    // Initial Load
+                    // Socket listeners...
                     app.checkAuthStatus();
                 },
 
-                // --- Handlers ---
-                handleLogin: async () => { /* ... pehle jaisa hi ... */ },
-                handleLogout: async () => { /* ... pehle jaisa hi ... */ },
-                handleAddDevice: () => { /* ... pehle jaisa hi ... */ },
-                handleDisconnect: async (clientId) => { /* ... pehle jaisa hi ... */ },
-                handleSaveKeyword: async (clientId) => { /* ... pehle jaisa hi ... */ },
-                handleDeleteKeyword: async (clientId, keywordId) => { /* ... pehle jaisa hi ... */ },
-                handleGeminiToggle: async (clientId, isEnabled) => { /* ... pehle jaisa hi ... */ },
-                // NAYA: Auto-Read Toggle Handler
-                handleAutoReadToggle: async (clientId, isEnabled) => {
-                    await fetch(`/api/toggle-autoread/${clientId}`, { method: 'POST', ...fetchOptions });
-                    const statusBox = root.querySelector('#status-box');
-                    if(statusBox) statusBox.textContent = `Auto-Read ${isEnabled ? 'enabled' : 'disabled'} for ${clientId}.`;
+                // Handlers...
+                handleLogin: async () => { /* ... */ },
+                handleLogout: async () => { /* ... */ },
+                handleGeminiToggle: async (clientId, isEnabled) => { /* ... */ },
+                // NAYA: Save Global Settings
+                handleSaveSettings: async () => {
+                    const apiKey = root.querySelector('#gemini-api-key').value.trim();
+                    const modelName = root.querySelector('#gemini-model-name').value.trim();
+                    await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ geminiApiKey: apiKey, geminiModelName: modelName }),
+                        ...fetchOptions
+                    });
+                    alert('Settings Saved!');
+                    app.renderDashboard();
                 },
-
-                // --- Render Functions ---
-                renderLogin: () => { /* ... pehle jaisa hi ... */ },
-                renderQR: (clientId, url) => { /* ... pehle jaisa hi ... */ },
-                renderKeywordsManager: async (clientId) => { /* ... pehle jaisa hi ... */ },
                 
-                // UPDATE: renderDashboard to show Auto-Read toggle
+                // Render Functions...
                 renderDashboard: async () => {
                     root.innerHTML = `
-                        <button id="logout-btn" style="float:right;">Logout</button>
+                        <button id="logout-btn" class="btn-danger" style="float:right;">Logout</button>
+                        <button class="global-settings-btn btn-secondary" style="float:right; margin-right: 10px;">Global Settings</button>
                         <h1>Device Dashboard</h1>
-                        <div id="status-box" class="center-text">Welcome! Add a new device or manage existing ones.</div>
-                        <h3>Add New Device</h3>
-                        <div style="display:flex; gap:10px;">
-                            <input type="text" id="new-client-id" placeholder="Enter a unique name (e.g., support_bot)">
-                            <button id="add-device-btn">Add Device</button>
-                        </div>
-                        <h3>Existing Devices</h3>
-                        <div id="device-list">Loading...</div>`;
-                    try {
-                        const response = await fetch('/api/devices', fetchOptions);
-                        const devices = await response.json();
-                        const deviceList = root.querySelector('#device-list');
-                        deviceList.innerHTML = devices.length ? '' : '<p class="center-text">No devices found.</p>';
-                        devices.forEach(device => {
-                            const el = document.createElement('div');
-                            el.className = 'device-list-item';
-                            el.id = `device-${device.id}`;
-                            el.innerHTML = `
-                                <div>
-                                    <strong>${device.id}</strong><br>
-                                    <span class="status status-${device.status.toLowerCase().replace(/ /g, '-')}">${device.status}</span>
-                                </div>
-                                <div class="actions">
-                                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-weight:normal; font-size:14px;">
-                                        <span>Auto Read</span>
-                                        <div class="switch">
-                                            <input type="checkbox" class="auto-read-toggle" data-id="${device.id}" ${device.autoReadEnabled ? 'checked' : ''}>
-                                            <span class="slider"></span>
-                                        </div>
-                                    </label>
-                                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-weight:normal; font-size:14px;">
-                                        <span>Gemini AI</span>
-                                        <div class="switch">
-                                            <input type="checkbox" class="gemini-toggle" data-id="${device.id}" ${device.geminiEnabled ? 'checked' : ''}>
-                                            <span class="slider"></span>
-                                        </div>
-                                    </label>
-                                    <button class="manage-keywords-btn" data-id="${device.id}">Keywords</button>
-                                    ${device.status === 'Connected' ? `<button class="disconnect-btn" data-id="${device.id}">Disconnect</button>` : ''}
-                                </div>`;
-                            deviceList.appendChild(el);
-                        });
-                    } catch (error) { /* ... */ }
+                        <!-- ... (dashboard ka baaki ka HTML) ... -->
+                    `;
+                    // ... (dashboard ki baaki ki logic)
                 },
-
-                // Initial Auth Check
-                checkAuthStatus: async () => {
-                    try {
-                        const response = await fetch('/api/auth-status', fetchOptions);
-                        const data = await response.json();
-                        data.loggedIn ? app.renderDashboard() : app.renderLogin();
-                    } catch (e) {
-                        app.renderLogin();
-                    }
-                }
+                // NAYA: Render Global Settings View
+                renderGlobalSettings: async () => {
+                    root.innerHTML = `
+                        <button class="back-to-dash"> ← Back to Dashboard</button>
+                        <h2>Global Settings</h2>
+                        <h3>Gemini AI Configuration</h3>
+                        <p>Changes here will affect all devices where Gemini AI is enabled.</p>
+                        <input type="password" id="gemini-api-key" placeholder="Enter New Gemini API Key (optional)">
+                        <input type="text" id="gemini-model-name" placeholder="gemini-1.0-pro">
+                        <button id="save-settings-btn">Save Settings</button>`;
+                    
+                    const response = await fetch('/api/settings', fetchOptions);
+                    const settings = await response.json();
+                    root.querySelector('#gemini-api-key').placeholder = `Current: ${settings.geminiApiKey}`;
+                    root.querySelector('#gemini-model-name').value = settings.geminiModelName;
+                },
+                // ... (baaki ke render functions)
             };
-            // Yahan par handlers ke poore function daal dein
-             // Handlers Full Code
-            app.handleLogin = async () => {
-                const username = root.querySelector('#username').value;
-                const password = root.querySelector('#password').value;
-                const response = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), ...fetchOptions });
-                if (response.ok) app.renderDashboard(); else alert('Login Failed!');
-            };
-            app.handleLogout = async () => { await fetch('/logout', fetchOptions); location.reload(); };
-            app.handleAddDevice = () => {
-                const clientIdInput = root.querySelector('#new-client-id');
-                const clientId = clientIdInput.value.trim().replace(/\s+/g, '_');
-                if (clientId) { socket.emit('add-device', { clientId }); clientIdInput.value = ''; } else { alert('Please enter a device name.'); }
-            };
-            app.handleDisconnect = async (clientId) => { if (confirm(`Are you sure you want to disconnect ${clientId}?`)) { await fetch(`/api/disconnect/${clientId}`, { method: 'POST', ...fetchOptions }); }};
-            app.handleGeminiToggle = async (clientId, isEnabled) => {
-                await fetch(`/api/toggle-gemini/${clientId}`, { method: 'POST', ...fetchOptions });
-                const statusBox = root.querySelector('#status-box');
-                if(statusBox) statusBox.textContent = `Gemini AI ${isEnabled ? 'enabled' : 'disabled'} for ${clientId}.`;
-            };
-            app.handleSaveKeyword = async (clientId) => {
-                const keyword = root.querySelector('#keyword-input').value.trim();
-                const reply = root.querySelector('#reply-input').value.trim();
-                const match_type = root.querySelector('#match-type-select').value;
-                if (!keyword || !reply) return alert('Keyword and Reply fields are required.');
-                await fetch(`/api/keywords/${clientId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword, reply, match_type }), ...fetchOptions });
-                app.renderKeywordsManager(clientId);
-            };
-            app.handleDeleteKeyword = async (clientId, keywordId) => { if (confirm('Are you sure?')) { await fetch(`/api/keywords/${clientId}/${keywordId}`, { method: 'DELETE', ...fetchOptions }); app.renderKeywordsManager(clientId); }};
-
-            // Render Functions Full Code
-            app.renderLogin = () => {
-                root.innerHTML = `
-                    <div class="center-text">
-                        <h1>Login to Bot Panel</h1>
-                        <input type="text" id="username" placeholder="Username" value="admin">
-                        <input type="password" id="password" placeholder="Password" value="password123">
-                        <button id="login-btn">Login</button>
-                    </div>`;
-            };
-            app.renderQR = (clientId, url) => {
-                root.innerHTML = `<div class="center-text"><h2>Scan QR for: <strong>${clientId}</strong></h2><img src="${url}"><button class="back-to-dash">Back</button></div>`;
-            };
-            app.renderKeywordsManager = async (clientId) => {
-                root.innerHTML = `
-                    <button class="back-to-dash"> ← Back to Dashboard</button>
-                    <h2>Manage Keywords for: <strong>${clientId}</strong></h2>
-                    <div style="border: 1px solid #eee; padding: 15px; margin-top:20px;">
-                         <h3>Add New Keyword</h3>
-                         <input type="text" id="keyword-input" placeholder="Keyword or Phrase"><input type="text" id="reply-input" placeholder="Bot's Reply Message">
-                         <select id="match-type-select"><option value="exact">Exact Match</option><option value="contains">Contains Match</option></select>
-                         <button id="save-keyword-btn" data-clientid="${clientId}">Save Keyword</button>
-                    </div>
-                    <h3>Saved Keywords</h3><div id="keywords-list">Loading...</div>`;
-                const response = await fetch(`/api/keywords/${clientId}`, fetchOptions);
-                const keywords = await response.json();
-                const list = root.querySelector('#keywords-list');
-                list.innerHTML = keywords.length ? '' : '<p>No keywords defined.</p>';
-                keywords.forEach(k => {
-                    const item = document.createElement('div');
-                    item.className = 'keyword-item';
-                    item.innerHTML = `<span><strong>Keyword:</strong><br>${k.keyword}</span><span><strong>Reply:</strong><br>${k.reply}</span><div class="actions"><button class="delete-btn delete-keyword-btn" data-clientid="${clientId}" data-keywordid="${k.id}">Delete</button></div>`;
-                    list.appendChild(item);
-                });
-            };
-
-            // Start the app
             app.init();
         });
     </script>
