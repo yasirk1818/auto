@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>WhatsApp Bot - Ultimate Panel</title>
-    <!-- ... (Saare styles pehle jaise hi) ... -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: auto; padding: 24px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
@@ -13,8 +13,9 @@
         h3 { border-top: 1px solid #dddfe2; padding-top: 20px; margin-top: 20px;}
         input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
         button { background-color: #1877f2; color: white; cursor: pointer; border-color: #1877f2; font-weight: bold; }
+        button:hover { background-color: #166fe5; }
         .btn-secondary { background-color: #6c757d; border-color: #6c757d; }
-        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
+        .btn-danger { background-color: #fa3e3e; border-color: #fa3e3e; }
         .device-list-item { display: grid; grid-template-columns: 1fr auto; padding: 15px; border-bottom: 1px solid #dddfe2; gap: 15px; align-items: center;}
         .device-list-item .actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
         .actions button { width: auto; margin: 0; font-size: 14px; padding: 8px 12px; }
@@ -30,7 +31,10 @@
     </style>
 </head>
 <body>
-    <div class="container" id="view-root"></div>
+    <div class="container" id="view-root">
+        <!-- Views will be rendered here by JavaScript -->
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -39,73 +43,148 @@
             const root = document.getElementById('view-root');
 
             const app = {
-                init: () => {
-                    root.addEventListener('click', (e) => {
-                        const target = e.target;
-                        if (target.id === 'login-btn') app.handleLogin();
-                        if (target.id === 'logout-btn') app.handleLogout();
-                        if (target.matches('.back-to-dash')) app.renderDashboard();
-                        if (target.id === 'add-device-btn') app.handleAddDevice();
-                        if (target.matches('.disconnect-btn')) app.handleDisconnect(target.dataset.id);
-                        if (target.matches('.manage-keywords-btn')) app.renderKeywordsManager(target.dataset.id);
-                        if (target.matches('.global-settings-btn')) app.renderGlobalSettings(); // NAYA
-                        if (target.id === 'save-settings-btn') app.handleSaveSettings(); // NAYA
-                        // ... baaki ke click handlers
-                    });
-                    root.addEventListener('change', e => {
-                        if (e.target.matches('.gemini-toggle')) app.handleGeminiToggle(e.target.dataset.id, e.target.checked);
-                        if (e.target.matches('.auto-read-toggle')) app.handleAutoReadToggle(e.target.dataset.id, e.target.checked);
-                    });
-                    // Socket listeners...
-                    app.checkAuthStatus();
+                // --- INITIALIZER ---
+                init() {
+                    this.bindEvents();
+                    this.checkAuthStatus();
                 },
 
-                // Handlers...
-                handleLogin: async () => { /* ... */ },
-                handleLogout: async () => { /* ... */ },
-                handleGeminiToggle: async (clientId, isEnabled) => { /* ... */ },
-                // NAYA: Save Global Settings
-                handleSaveSettings: async () => {
+                // --- EVENT BINDING ---
+                bindEvents() {
+                    root.addEventListener('click', (e) => this.handleClick(e));
+                    root.addEventListener('change', (e) => this.handleChange(e));
+                    socket.on('statusUpdate', () => { if (root.querySelector('#device-list')) this.renderDashboard(); });
+                    socket.on('qr', ({ clientId, url }) => this.renderQR(clientId, url));
+                    socket.on('ready', ({ clientId }) => { alert(`Device '${clientId}' is connected!`); if (root.querySelector('#device-list')) this.renderDashboard(); });
+                },
+
+                // --- EVENT HANDLERS ---
+                handleClick(e) {
+                    const target = e.target;
+                    const actionMap = {
+                        'login-btn': () => this.handleLogin(),
+                        'logout-btn': () => this.handleLogout(),
+                        'add-device-btn': () => this.handleAddDevice(),
+                        'save-settings-btn': () => this.handleSaveSettings(),
+                        'save-keyword-btn': () => this.handleSaveKeyword(target.dataset.clientid),
+                    };
+                    const classActionMap = {
+                        'back-to-dash': () => this.renderDashboard(),
+                        'disconnect-btn': () => this.handleDisconnect(target.dataset.id),
+                        'manage-keywords-btn': () => this.renderKeywordsManager(target.dataset.id),
+                        'global-settings-btn': () => this.renderGlobalSettings(),
+                        'delete-keyword-btn': () => this.handleDeleteKeyword(target.dataset.clientid, target.dataset.keywordid)
+                    };
+                    if (target.id && actionMap[target.id]) {
+                        actionMap[target.id]();
+                    }
+                    for (const className in classActionMap) {
+                        if (target.matches(`.${className}`)) {
+                            classActionMap[className]();
+                        }
+                    }
+                },
+                handleChange(e) {
+                    const target = e.target;
+                    if (target.matches('.gemini-toggle')) this.handleGeminiToggle(target.dataset.id, target.checked);
+                    if (target.matches('.auto-read-toggle')) this.handleAutoReadToggle(target.dataset.id, target.checked);
+                },
+
+                // --- ACTION HANDLERS (LOGIC) ---
+                async handleLogin() {
+                    const username = root.querySelector('#username').value;
+                    const password = root.querySelector('#password').value;
+                    const response = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), ...fetchOptions });
+                    if (response.ok) this.renderDashboard(); else alert('Login Failed!');
+                },
+                async handleLogout() { await fetch('/logout', fetchOptions); location.reload(); },
+                handleAddDevice() {
+                    const clientIdInput = root.querySelector('#new-client-id');
+                    const clientId = clientIdInput.value.trim().replace(/\s+/g, '_');
+                    if (clientId) { socket.emit('add-device', { clientId }); clientIdInput.value = ''; } 
+                    else { alert('Please enter a device name.'); }
+                },
+                async handleDisconnect(clientId) { if (confirm(`Disconnect ${clientId}?`)) await fetch(`/api/disconnect/${clientId}`, { method: 'POST', ...fetchOptions }); },
+                async handleGeminiToggle(clientId, isEnabled) { await fetch(`/api/toggle-gemini/${clientId}`, { method: 'POST', ...fetchOptions }); },
+                async handleAutoReadToggle(clientId, isEnabled) { await fetch(`/api/toggle-autoread/${clientId}`, { method: 'POST', ...fetchOptions }); },
+                async handleSaveSettings() {
                     const apiKey = root.querySelector('#gemini-api-key').value.trim();
                     const modelName = root.querySelector('#gemini-model-name').value.trim();
-                    await fetch('/api/settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ geminiApiKey: apiKey, geminiModelName: modelName }),
-                        ...fetchOptions
-                    });
-                    alert('Settings Saved!');
-                    app.renderDashboard();
+                    await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ geminiApiKey: apiKey, geminiModelName: modelName }), ...fetchOptions });
+                    alert('Settings Saved!'); this.renderDashboard();
                 },
-                
-                // Render Functions...
-                renderDashboard: async () => {
-                    root.innerHTML = `
-                        <button id="logout-btn" class="btn-danger" style="float:right;">Logout</button>
-                        <button class="global-settings-btn btn-secondary" style="float:right; margin-right: 10px;">Global Settings</button>
-                        <h1>Device Dashboard</h1>
-                        <!-- ... (dashboard ka baaki ka HTML) ... -->
-                    `;
-                    // ... (dashboard ki baaki ki logic)
+                async handleSaveKeyword(clientId) {
+                    const keyword = root.querySelector('#keyword-input').value.trim();
+                    const reply = root.querySelector('#reply-input').value.trim();
+                    if (!keyword || !reply) return alert('Keyword and Reply fields are required.');
+                    await fetch(`/api/keywords/${clientId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword, reply, match_type: root.querySelector('#match-type-select').value }), ...fetchOptions });
+                    this.renderKeywordsManager(clientId);
                 },
-                // NAYA: Render Global Settings View
-                renderGlobalSettings: async () => {
-                    root.innerHTML = `
-                        <button class="back-to-dash"> ← Back to Dashboard</button>
-                        <h2>Global Settings</h2>
-                        <h3>Gemini AI Configuration</h3>
-                        <p>Changes here will affect all devices where Gemini AI is enabled.</p>
-                        <input type="password" id="gemini-api-key" placeholder="Enter New Gemini API Key (optional)">
-                        <input type="text" id="gemini-model-name" placeholder="gemini-1.0-pro">
-                        <button id="save-settings-btn">Save Settings</button>`;
-                    
-                    const response = await fetch('/api/settings', fetchOptions);
-                    const settings = await response.json();
+                async handleDeleteKeyword(clientId, keywordId) {
+                    if (confirm('Delete this keyword?')) {
+                         await fetch(`/api/keywords/${clientId}/${keywordId}`, { method: 'DELETE', ...fetchOptions });
+                         this.renderKeywordsManager(clientId);
+                    }
+                },
+
+                // --- VIEW RENDERING FUNCTIONS ---
+                renderLogin() {
+                    root.innerHTML = `<div class="center-text"><h1>Login</h1><input id="username" value="admin"><input id="password" type="password" value="password123"><button id="login-btn">Login</button></div>`;
+                },
+                async renderDashboard() {
+                    root.innerHTML = `<button id="logout-btn" class="btn-danger" style="float:right;">Logout</button><button class="global-settings-btn btn-secondary" style="float:right; margin-right: 10px;">Settings</button><h1>Dashboard</h1><div id="status-box" class="center-text">Welcome</div><h3>Add Device</h3><div style="display:flex;gap:10px;"><input id="new-client-id" placeholder="Enter name"><button id="add-device-btn">Add</button></div><h3>Devices</h3><div id="device-list">...</div>`;
+                    try {
+                        const response = await fetch('/api/devices', fetchOptions);
+                        const devices = await response.json();
+                        const deviceList = root.querySelector('#device-list');
+                        deviceList.innerHTML = devices.length ? '' : '<p class="center-text">No devices</p>';
+                        devices.forEach(device => {
+                            const el = document.createElement('div');
+                            el.className = 'device-list-item';
+                            el.id = `device-${device.id}`;
+                            el.innerHTML = `<div><strong>${device.id}</strong><br><span class="status status-${device.status.toLowerCase().replace(/ /g, '-')}">${device.status}</span></div><div class="actions"><label style="display:flex;align-items:center;gap:5px;"><span>AutoRead</span><div class="switch"><input class="auto-read-toggle" type="checkbox" data-id="${device.id}" ${device.autoReadEnabled ? 'checked' : ''}><span class="slider"></span></div></label><label style="display:flex;align-items:center;gap:5px;"><span>Gemini</span><div class="switch"><input class="gemini-toggle" type="checkbox" data-id="${device.id}" ${device.geminiEnabled ? 'checked' : ''}><span class="slider"></span></div></label><button class="manage-keywords-btn" data-id="${device.id}">Keywords</button>${device.status === 'Connected' ? `<button class="disconnect-btn btn-danger" data-id="${device.id}">X</button>` : ''}</div>`;
+                            deviceList.appendChild(el);
+                        });
+                    } catch (e) {
+                        root.querySelector('#device-list').innerHTML = `<p style="color:red;">Could not load devices.</p>`;
+                    }
+                },
+                async renderGlobalSettings() {
+                    root.innerHTML = `<button class="back-to-dash btn-secondary">? Back</button><h2>Settings</h2><h3>Gemini</h3><input id="gemini-api-key" type="password" placeholder="New API Key (optional)"><input id="gemini-model-name"><button id="save-settings-btn">Save</button>`;
+                    const settings = await (await fetch('/api/settings', fetchOptions)).json();
                     root.querySelector('#gemini-api-key').placeholder = `Current: ${settings.geminiApiKey}`;
                     root.querySelector('#gemini-model-name').value = settings.geminiModelName;
                 },
-                // ... (baaki ke render functions)
+                async renderKeywordsManager(clientId) {
+                    root.innerHTML = `<button class="back-to-dash btn-secondary">? Back</button><h2>Keywords: <strong>${clientId}</strong></h2><div><h3>Add Keyword</h3><input id="keyword-input"><input id="reply-input"><select id="match-type-select"><option value="exact">Exact</option><option value="contains">Contains</option></select><button id="save-keyword-btn" data-clientid="${clientId}">Save</button></div><h3>Saved</h3><div id="keywords-list">...</div>`;
+                    const keywords = await (await fetch(`/api/keywords/${clientId}`, fetchOptions)).json();
+                    const list = root.querySelector('#keywords-list');
+                    list.innerHTML = keywords.length ? '' : '<p class="center-text">No keywords</p>';
+                    keywords.forEach(k => {
+                        const item = document.createElement('div');
+                        item.className = 'keyword-item';
+                        item.innerHTML = `<span><strong>Keyword:</strong><br>${k.keyword}</span><span><strong>Reply:</strong><br>${k.reply} (${k.match_type})</span><div class="actions"><button class="delete-btn delete-keyword-btn" data-clientid="${clientId}" data-keywordid="${k.id}">Del</button></div>`;
+                        list.appendChild(item);
+                    });
+                },
+                renderQR(clientId, url) {
+                    root.innerHTML = `<div class="center-text"><h2>Scan QR for: <strong>${clientId}</strong></h2><img src="${url}"><button class="back-to-dash btn-secondary">Back</button></div>`;
+                },
+                
+                // --- Initial Auth Check ---
+                async checkAuthStatus() {
+                    try {
+                        const response = await fetch('/api/auth-status', fetchOptions);
+                        if (!response.ok) throw new Error('Auth check failed');
+                        const data = await response.json();
+                        data.loggedIn ? this.renderDashboard() : this.renderLogin();
+                    } catch (e) {
+                        this.renderLogin();
+                    }
+                }
             };
+
+            // Start the application
             app.init();
         });
     </script>
