@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-bot-panel",
+  "name": "server",
   "version": "1.0.0",
   "description": "A WhatsApp auto-reply bot with a web-based management panel.",
   "main": "server.js",
