@@ -1,5 +1,5 @@
 // --- Imports ---
-require('dotenv').config(); // .env file ko load karne ke liye sabse upar
+require('dotenv').config();
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
 const session = require('express-session');
@@ -23,13 +23,13 @@ const DEVICES_CONFIG_PATH = path.join(__dirname, 'devices.json');
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const geminiModel = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// --- Helper Functions to read/write device config ---
+// --- Helper Functions ---
 const readDeviceConfig = async () => {
     try {
         const data = await fs.readFile(DEVICES_CONFIG_PATH, 'utf8');
         return JSON.parse(data);
     } catch (error) {
-        if (error.code === 'ENOENT') return {}; // File nahi hai to empty object
+        if (error.code === 'ENOENT') return {};
         throw error;
     }
 };
@@ -43,18 +43,18 @@ const ADMIN_PASSWORD = "password123";
 app.use(express.static('public'));
 app.use(express.json());
 app.use(session({
-    secret: 'gemini-is-awesome-and-this-is-a-secret',
+    secret: 'auto-read-feature-is-the-best-secret',
     resave: false,
     saveUninitialized: true,
     cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 const checkAuth = (req, res, next) => req.session.loggedIn ? next() : res.status(401).json({ error: 'Unauthorized' });
 
-// --- All API Routes (Auth, Device, Keywords, Gemini) ---
-// ... (Auth routes pehle jaisa hi)
-app.post('/login', (req, res) => { /* ... */ });
-app.get('/logout', (req, res) => { /* ... */ });
-app.get('/api/auth-status', (req, res) => { /* ... */ });
+// --- All API Routes ---
+// Auth Routes...
+app.post('/login', (req, res) => { /* ... pehle jaisa hi ... */ });
+app.get('/logout', (req, res) => { /* ... pehle jaisa hi ... */ });
+app.get('/api/auth-status', (req, res) => { /* ... pehle jaisa hi ... */ });
 // Yahan auth routes ka poora code daal dein
 app.post('/login', (req, res) => {
     if (req.body.username === ADMIN_USERNAME && req.body.password === ADMIN_PASSWORD) {
@@ -64,18 +64,19 @@ app.post('/login', (req, res) => {
 app.get('/logout', (req, res) => req.session.destroy(() => res.json({ success: true })));
 app.get('/api/auth-status', (req, res) => res.json({ loggedIn: !!req.session.loggedIn }));
 
-
+// Device Routes...
 app.get('/api/devices', checkAuth, async (req, res) => {
     const config = await readDeviceConfig();
     const deviceList = Object.keys(config).map(clientId => ({
         id: clientId,
         status: clientStatuses[clientId] || 'Disconnected',
-        geminiEnabled: config[clientId].geminiEnabled || false
+        geminiEnabled: config[clientId].geminiEnabled || false,
+        autoReadEnabled: config[clientId].autoReadEnabled || false // NAYA: autoRead status bhejein
     }));
     res.json(deviceList);
 });
 
-app.post('/api/disconnect/:clientId', checkAuth, async (req, res) => { /* ... (Pehle jaisa hi) ... */ });
+app.post('/api/disconnect/:clientId', checkAuth, async (req, res) => { /* ... pehle jaisa hi ... */ });
 app.post('/api/disconnect/:clientId', checkAuth, async (req, res) => {
     const client = clients[req.params.clientId];
     if (client) { await client.logout(); res.json({ success: true }); }
@@ -83,7 +84,7 @@ app.post('/api/disconnect/:clientId', checkAuth, async (req, res) => {
 });
 
 
-// NAYA: Gemini Toggle API
+app.post('/api/toggle-gemini/:clientId', checkAuth, async (req, res) => { /* ... pehle jaisa hi ... */ });
 app.post('/api/toggle-gemini/:clientId', checkAuth, async (req, res) => {
     const { clientId } = req.params;
     const config = await readDeviceConfig();
@@ -91,18 +92,32 @@ app.post('/api/toggle-gemini/:clientId', checkAuth, async (req, res) => {
         config[clientId].geminiEnabled = !config[clientId].geminiEnabled;
         await writeDeviceConfig(config);
         res.json({ success: true, geminiEnabled: config[clientId].geminiEnabled });
+    } else { res.status(404).send('Device not found'); }
+});
+
+
+// NAYA: API to toggle auto-read
+app.post('/api/toggle-autoread/:clientId', checkAuth, async (req, res) => {
+    const { clientId } = req.params;
+    const config = await readDeviceConfig();
+    if (config[clientId]) {
+        config[clientId].autoReadEnabled = !config[clientId].autoReadEnabled;
+        await writeDeviceConfig(config);
+        res.json({ success: true, autoReadEnabled: config[clientId].autoReadEnabled });
     } else {
         res.status(404).send('Device not found');
     }
 });
 
-// Keyword APIs (Updated to use new data structure)
+// Keyword Routes...
+app.get('/api/keywords/:clientId', checkAuth, async (req, res) => { /* ... pehle jaisa hi ... */ });
+app.post('/api/keywords/:clientId', checkAuth, async (req, res) => { /* ... pehle jaisa hi ... */ });
+app.delete('/api/keywords/:clientId/:keywordId', checkAuth, async (req, res) => { /* ... pehle jaisa hi ... */ });
+// Yahan keywords API ka poora code daal dein
 app.get('/api/keywords/:clientId', checkAuth, async (req, res) => {
     const config = await readDeviceConfig();
-    const deviceConfig = config[req.params.clientId];
-    res.json(deviceConfig ? deviceConfig.keywords : []);
+    res.json(config[req.params.clientId]?.keywords || []);
 });
-
 app.post('/api/keywords/:clientId', checkAuth, async (req, res) => {
     const { clientId } = req.params;
     const config = await readDeviceConfig();
@@ -112,7 +127,6 @@ app.post('/api/keywords/:clientId', checkAuth, async (req, res) => {
     await writeDeviceConfig(config);
     res.status(201).json(newKeyword);
 });
-
 app.delete('/api/keywords/:clientId/:keywordId', checkAuth, async (req, res) => {
     const { clientId, keywordId } = req.params;
     const config = await readDeviceConfig();
@@ -123,16 +137,20 @@ app.delete('/api/keywords/:clientId/:keywordId', checkAuth, async (req, res) => 
 });
 
 
-// --- WhatsApp Client Logic (Updated for Gemini) ---
+// --- WhatsApp Client Logic ---
 const initializeClient = async (clientId) => {
     if (clients[clientId]) return;
     clientStatuses[clientId] = 'Initializing';
     io.emit('statusUpdate', { clientId, status: 'Initializing' });
 
-    // Ensure config exists for this new device
     const config = await readDeviceConfig();
     if (!config[clientId]) {
-        config[clientId] = { geminiEnabled: false, keywords: [] };
+        // NAYA: Default settings for new device
+        config[clientId] = {
+            geminiEnabled: false,
+            autoReadEnabled: false,
+            keywords: []
+        };
         await writeDeviceConfig(config);
     }
 
@@ -144,7 +162,7 @@ const initializeClient = async (clientId) => {
     client.on('qr', (qr) => { /* ... pehle jaisa hi ... */ });
     client.on('ready', () => { /* ... pehle jaisa hi ... */ });
     client.on('disconnected', (reason) => { /* ... pehle jaisa hi ... */ });
-    // Full event handlers
+    // Poore event handlers
     client.on('qr', qr => {
         clientStatuses[clientId] = 'Needs QR Scan';
         io.emit('statusUpdate', { clientId, status: 'Needs QR Scan' });
@@ -161,37 +179,42 @@ const initializeClient = async (clientId) => {
     });
 
 
-    // === MESSAGE HANDLER UPDATE FOR GEMINI ===
+    // === MESSAGE HANDLER UPDATE FOR AUTO-READ ===
     client.on('message', async message => {
         const config = await readDeviceConfig();
         const deviceConfig = config[clientId];
         if (!deviceConfig) return;
 
+        // 1. Auto Read Logic (Sabse pehle chalega)
+        if (deviceConfig.autoReadEnabled) {
+            try {
+                const chat = await message.getChat();
+                await chat.sendSeen();
+                console.log(`[${clientId}] Marked message from ${message.from} as read.`);
+            } catch (e) {
+                console.error(`[${clientId}] Failed to mark as read:`, e);
+            }
+        }
+        
+        // 2. Keyword Check
         const incomingMessage = message.body.toLowerCase();
-
-        // 1. Keyword Check (Priority 1)
         for (const item of deviceConfig.keywords) {
             const keyword = item.keyword.toLowerCase();
             if ((item.match_type === 'exact' && incomingMessage === keyword) || (item.match_type === 'contains' && incomingMessage.includes(keyword))) {
-                console.log(`[${clientId}] Matched keyword: "${keyword}". Replying...`);
                 message.reply(item.reply);
-                return; // Stop processing
+                return;
             }
         }
 
-        // 2. Gemini Check (Priority 2)
+        // 3. Gemini Check
         if (deviceConfig.geminiEnabled) {
-            console.log(`[${clientId}] No keyword match. Forwarding to Gemini...`);
             try {
                 const result = await geminiModel.generateContent(message.body);
                 const response = await result.response;
                 const text = response.text();
-                console.log(`[${clientId}] Gemini replied: "${text}"`);
                 message.reply(text);
             } catch (error) {
                 console.error(`[${clientId}] Gemini API Error:`, error);
-                // Optionally send a fallback message
-                // message.reply("Sorry, I'm having trouble thinking right now. Please try again later.");
             }
         }
     });
@@ -206,6 +229,10 @@ const initializeClient = async (clientId) => {
 
 
 // --- Socket.IO & Server Startup ---
+io.on('connection', socket => { /* ... pehle jaisa hi ... */ });
+const reinitializeExistingSessions = async () => { /* ... pehle jaisa hi ... */ };
+server.listen(port, () => { /* ... pehle jaisa hi ... */ });
+// Poora code
 io.on('connection', socket => {
     socket.on('add-device', ({ clientId }) => {
         const cleanClientId = clientId.replace(/\s+/g, '_');
@@ -217,6 +244,6 @@ const reinitializeExistingSessions = async () => {
     Object.keys(config).forEach(clientId => initializeClient(clientId));
 };
 server.listen(port, () => {
-    console.log(`Server with Gemini support running on http://localhost:${port}`);
+    console.log(`Server with AutoRead & Gemini support running on http://localhost:${port}`);
     reinitializeExistingSessions();
 });
