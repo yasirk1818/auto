@@ -5,17 +5,21 @@
     <title>WhatsApp Multi-Device Bot</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: system-ui, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: auto; padding: 24px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
         .hidden { display: none; }
         .center-text { text-align: center; }
+        h1, h2, h3 { color: #1c1e21; }
+        h3 { border-top: 1px solid #dddfe2; padding-top: 20px; margin-top: 20px;}
         input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
-        button { background-color: #1877f2; color: white; cursor: pointer; border-color: #1877f2; }
-        #back-to-dash { background-color: #6c757d; border-color: #6c757d; width: auto; padding: 8px 15px; margin-bottom: 20px;}
+        button { background-color: #1877f2; color: white; cursor: pointer; border-color: #1877f2; font-weight: bold; }
+        button:hover { background-color: #166fe5; }
+        .back-btn { background-color: #6c757d; border-color: #6c757d; width: auto; padding: 8px 15px; margin-bottom: 20px;}
         .device-list-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #dddfe2; gap: 10px;}
         .device-list-item button { width: auto; margin: 0; font-size: 14px; padding: 8px 12px; }
-        .disconnect-btn, .delete-btn { background-color: #dc3545; border-color: #dc3545; }
-        .keyword-item { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; border-bottom: 1px solid #dddfe2; align-items: center; text-align: left; }
+        .disconnect-btn, .delete-btn { background-color: #fa3e3e; border-color: #fa3e3e; }
+        .disconnect-btn:hover, .delete-btn:hover { background-color: #e33434; }
+        .keyword-item { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; border-bottom: 1px solid #dddfe2; align-items: center; text-align: left; word-break: break-word; }
         .keyword-item .actions { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }
         .keyword-item .actions button { width: auto; font-size: 14px; padding: 6px 10px; }
         .status { padding: 4px 8px; border-radius: 12px; font-weight: bold; color: white; font-size: 12px; }
@@ -37,189 +41,201 @@
             const fetchOptions = { credentials: 'include' };
             const root = document.getElementById('view-root');
 
-            // --- Event Delegation for Clicks ---
-            root.addEventListener('click', async (e) => {
-                if (e.target.id === 'login-btn') handleLogin();
-                if (e.target.id === 'logout-btn') handleLogout();
-                if (e.target.id === 'add-device-btn') handleAddDevice();
-                if (e.target.id === 'qr-back-btn') renderDashboard();
-                if (e.target.id === 'back-to-dash') renderDashboard();
-                if (e.target.matches('.disconnect-btn')) handleDisconnect(e.target.dataset.id);
-                if (e.target.matches('.manage-keywords-btn')) renderKeywordsManager(e.target.dataset.id);
-                // Added handlers for save and delete buttons inside keyword manager
-                if (e.target.id === 'save-keyword-btn') handleSaveKeyword(e.target.dataset.id);
-                if (e.target.matches('.delete-keyword-btn')) handleDeleteKeyword(e.target.dataset.clientid, e.target.dataset.keywordid);
-            });
-            
-            // --- Handlers ---
-            const handleLogin = async () => { /* ... pehle jaisa hi ... */ };
-            const handleLogout = async () => { /* ... pehle jaisa hi ... */ };
-            const handleAddDevice = () => { /* ... pehle jaisa hi ... */ };
-            const handleDisconnect = async (clientId) => { /* ... pehle jaisa hi ... */ };
-            // Handlers from previous code
-            const handleLogin_full = async () => {
-                const usernameEl = document.getElementById('username');
-                const passwordEl = document.getElementById('password');
-                const response = await fetch('/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: usernameEl.value, password: passwordEl.value }),
-                    ...fetchOptions
-                });
-                if (response.ok) renderDashboard();
-            };
-            const handleLogout_full = async () => { await fetch('/logout', fetchOptions); location.reload(); };
-            const handleAddDevice_full = () => {
-                const clientIdEl = document.getElementById('new-client-id');
-                const clientId = clientIdEl.value.trim();
-                if (clientId) { socket.emit('add-device', { clientId }); clientIdEl.value = ''; }
-            };
-            const handleDisconnect_full = async (clientId) => {
-                if (confirm(`Are you sure you want to disconnect ${clientId}?`)) {
-                    await fetch(`/api/disconnect/${clientId}`, { method: 'POST', ...fetchOptions });
-                }
-            };
-            // Assigning full handlers
-            window.handleLogin = handleLogin_full;
-            window.handleLogout = handleLogout_full;
-            window.handleAddDevice = handleAddDevice_full;
-            window.handleDisconnect = handleDisconnect_full;
+            // --- ALL LOGIC IS NOW INSIDE THIS FUNCTION ---
 
-
-            // NAYA: Keyword save/delete handlers
-            const handleSaveKeyword = async (clientId) => {
-                const keyword = document.getElementById('keyword-input').value.trim();
-                const reply = document.getElementById('reply-input').value.trim();
-                const match_type = document.getElementById('match-type-select').value;
-                if (!keyword || !reply) return alert('Keyword and Reply fields are required.');
-
-                await fetch(`/api/keywords/${clientId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword, reply, match_type }),
-                    ...fetchOptions
-                });
-                renderKeywordsManager(clientId); // Re-render to show updated list
-            };
-
-            const handleDeleteKeyword = async (clientId, keywordId) => {
-                if (confirm('Are you sure you want to delete this keyword?')) {
-                    // Note: We need to build a new API endpoint for keyword deletion in server.js
-                    // For now, let's assume it exists. We'll add it later.
-                    // await fetch(`/api/keywords/${clientId}/${keywordId}`, { method: 'DELETE', ...fetchOptions });
-                    alert(`Deletion logic for Keyword ID ${keywordId} of client ${clientId} needs to be implemented.`);
-                    renderKeywordsManager(clientId);
-                }
-            };
-            
-            // --- Render Functions ---
-            const renderLogin = () => { /* ... pehle jaisa hi ... */ };
-            const renderDashboard = async () => { /* ... pehle jaisa hi ... */ };
-            const renderQR = (clientId, url) => { /* ... pehle jaisa hi ... */ };
-            // Full render functions from previous code
-            const renderLogin_full = () => {
-                root.innerHTML = `
-                    <div class="center-text">
-                        <h1>Login to Bot Panel</h1>
-                        <input type="text" id="username" placeholder="Username" value="admin">
-                        <input type="password" id="password" placeholder="Password" value="password123">
-                        <button id="login-btn">Login</button>
-                    </div>`;
-            };
-            const renderDashboard_full = async () => {
-                root.innerHTML = `
-                    <button id="logout-btn" style="float:right;">Logout</button>
-                    <h1>Device Dashboard</h1>
-                    <div id="status-box">Welcome! Add a new device or manage existing ones.</div>
-                    <h3>Add New Device</h3>
-                    <div style="display:flex; gap:10px;">
-                        <input type="text" id="new-client-id" placeholder="Enter a unique name (e.g., support_bot)">
-                        <button id="add-device-btn">Add Device</button>
-                    </div>
-                    <h3>Existing Devices</h3>
-                    <div id="device-list">Loading...</div>`;
-                const response = await fetch('/api/devices', fetchOptions);
-                const devices = await response.json();
-                const deviceList = document.getElementById('device-list');
-                deviceList.innerHTML = devices.length ? '' : '<p>No devices found.</p>';
-                devices.forEach(device => {
-                    const el = document.createElement('div');
-                    el.className = 'device-list-item';
-                    el.id = `device-${device.id}`;
-                    el.innerHTML = `
-                        <div>
-                            <strong>${device.id}</strong><br>
-                            <span class="status status-${device.status.toLowerCase().replace(/ /g, '-')}">${device.status}</span>
-                        </div>
-                        <div>
-                            <button class="manage-keywords-btn" data-id="${device.id}">Keywords</button>
-                            ${device.status === 'Connected' ? `<button class="disconnect-btn" data-id="${device.id}">Disconnect</button>` : ''}
-                        </div>`;
-                    deviceList.appendChild(el);
-                });
-            };
-            const renderQR_full = (clientId, url) => {
-                root.innerHTML = `
-                    <div class="center-text">
-                        <h2>Scan QR for: ${clientId}</h2>
-                        <img id="qrcode-image" src="${url}">
-                        <button id="qr-back-btn">Back to Dashboard</button>
-                    </div>`;
-            };
-            // Assigning full render functions
-            window.renderLogin = renderLogin_full;
-            window.renderDashboard = renderDashboard_full;
-            window.renderQR = renderQR_full;
-
-
-            // === YEH FUNCTION POORI TARAH SE UPDATE KIYA GAYA HAI ===
-            const renderKeywordsManager = async (clientId) => {
-                root.innerHTML = `
-                    <button id="back-to-dash"> ← Back to Dashboard</button>
-                    <h2>Manage Keywords for: <strong>${clientId}</strong></h2>
-                    <div class="form-container" style="text-align:left; border: 1px solid #eee; padding: 15px; margin-top:20px;">
-                         <h3>Add New Keyword</h3>
-                         <input type="text" id="keyword-input" placeholder="Keyword or Phrase">
-                         <input type="text" id="reply-input" placeholder="Bot's Reply Message">
-                         <select id="match-type-select">
-                            <option value="exact">Exact Match</option>
-                            <option value="contains">Contains Match</option>
-                         </select>
-                         <button id="save-keyword-btn" data-id="${clientId}">Save Keyword</button>
-                    </div>
-                    <h3>Saved Keywords</h3>
-                    <div id="keywords-list">Loading...</div>`;
+            const initApp = () => {
                 
-                // Fetch and display existing keywords
-                const response = await fetch(`/api/keywords/${clientId}`, fetchOptions);
-                const keywords = await response.json();
-                const keywordsList = document.getElementById('keywords-list');
-                keywordsList.innerHTML = keywords.length ? '' : '<p>No keywords defined for this device.</p>';
-
-                keywords.forEach(k => {
-                    const item = document.createElement('div');
-                    item.className = 'keyword-item';
-                    item.innerHTML = `
-                        <span><strong>Keyword:</strong><br>${k.keyword}</span>
-                        <span><strong>Reply:</strong><br>${k.reply} (${k.match_type})</span>
-                        <div class="actions">
-                            <button class="delete-keyword-btn" data-clientid="${clientId}" data-keywordid="${k.id}">Delete</button>
-                        </div>`;
-                    keywordsList.appendChild(item);
+                // --- Event Delegation for all clicks ---
+                root.addEventListener('click', async (e) => {
+                    const target = e.target;
+                    if (target.id === 'login-btn') handleLogin();
+                    if (target.id === 'logout-btn') handleLogout();
+                    if (target.id === 'add-device-btn') handleAddDevice();
+                    if (target.matches('.back-to-dash')) renderDashboard();
+                    if (target.matches('.disconnect-btn')) handleDisconnect(target.dataset.id);
+                    if (target.matches('.manage-keywords-btn')) renderKeywordsManager(target.dataset.id);
+                    if (target.id === 'save-keyword-btn') handleSaveKeyword(target.dataset.clientid);
+                    if (target.matches('.delete-keyword-btn')) handleDeleteKeyword(target.dataset.clientid, target.dataset.keywordid);
                 });
+
+                // --- Handlers ---
+                const handleLogin = async () => {
+                    const username = root.querySelector('#username').value;
+                    const password = root.querySelector('#password').value;
+                    const response = await fetch('/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password }),
+                        ...fetchOptions
+                    });
+                    if (response.ok) renderDashboard();
+                    else alert('Login Failed!');
+                };
+
+                const handleLogout = async () => {
+                    await fetch('/logout', fetchOptions);
+                    location.reload();
+                };
+
+                const handleAddDevice = () => {
+                    const clientIdInput = root.querySelector('#new-client-id');
+                    const clientId = clientIdInput.value.trim().replace(/\s+/g, '_'); // Replace spaces with underscores
+                    if (clientId) {
+                        socket.emit('add-device', { clientId });
+                        clientIdInput.value = '';
+                    } else {
+                        alert('Please enter a device name.');
+                    }
+                };
+
+                const handleDisconnect = async (clientId) => {
+                    if (confirm(`Are you sure you want to disconnect ${clientId}?`)) {
+                        await fetch(`/api/disconnect/${clientId}`, { method: 'POST', ...fetchOptions });
+                    }
+                };
+                
+                const handleSaveKeyword = async (clientId) => {
+                    const keyword = root.querySelector('#keyword-input').value.trim();
+                    const reply = root.querySelector('#reply-input').value.trim();
+                    const match_type = root.querySelector('#match-type-select').value;
+                    if (!keyword || !reply) return alert('Keyword and Reply fields are required.');
+                    await fetch(`/api/keywords/${clientId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keyword, reply, match_type }),
+                        ...fetchOptions
+                    });
+                    renderKeywordsManager(clientId);
+                };
+
+                const handleDeleteKeyword = async (clientId, keywordId) => {
+                    if (confirm('Are you sure you want to delete this keyword?')) {
+                         await fetch(`/api/keywords/${clientId}/${keywordId}`, { method: 'DELETE', ...fetchOptions });
+                         renderKeywordsManager(clientId);
+                    }
+                };
+
+                // --- View Rendering Functions ---
+                const renderLogin = () => {
+                    root.innerHTML = `
+                        <div class="center-text">
+                            <h1>Login to Bot Panel</h1>
+                            <input type="text" id="username" placeholder="Username" value="admin">
+                            <input type="password" id="password" placeholder="Password" value="password123">
+                            <button id="login-btn">Login</button>
+                        </div>`;
+                };
+
+                const renderDashboard = async () => {
+                    root.innerHTML = `
+                        <button id="logout-btn" style="float:right;">Logout</button>
+                        <h1>Device Dashboard</h1>
+                        <div id="status-box" class="center-text">Welcome! Add a new device or manage existing ones.</div>
+                        <h3>Add New Device</h3>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="new-client-id" placeholder="Enter a unique name (e.g., support_bot)">
+                            <button id="add-device-btn">Add Device</button>
+                        </div>
+                        <h3>Existing Devices</h3>
+                        <div id="device-list">Loading...</div>`;
+
+                    try {
+                        const response = await fetch('/api/devices', fetchOptions);
+                        if (!response.ok) throw new Error('Failed to fetch devices.');
+                        const devices = await response.json();
+                        const deviceList = root.querySelector('#device-list');
+                        deviceList.innerHTML = devices.length ? '' : '<p class="center-text">No devices found. Add one to get started!</p>';
+                        devices.forEach(device => {
+                            const el = document.createElement('div');
+                            el.className = 'device-list-item';
+                            el.id = `device-${device.id}`;
+                            el.innerHTML = `
+                                <div>
+                                    <strong>${device.id}</strong><br>
+                                    <span class="status status-${device.status.toLowerCase().replace(/ /g, '-')}">${device.status}</span>
+                                </div>
+                                <div>
+                                    <button class="manage-keywords-btn" data-id="${device.id}">Keywords</button>
+                                    ${device.status === 'Connected' ? `<button class="disconnect-btn" data-id="${device.id}">Disconnect</button>` : ''}
+                                </div>`;
+                            deviceList.appendChild(el);
+                        });
+                    } catch (error) {
+                        root.querySelector('#device-list').innerHTML = `<p style="color:red" class="center-text">${error.message}</p>`;
+                    }
+                };
+                
+                const renderKeywordsManager = async (clientId) => {
+                    root.innerHTML = `
+                        <button class="back-to-dash"> ← Back to Dashboard</button>
+                        <h2>Manage Keywords for: <strong>${clientId}</strong></h2>
+                        <div style="border: 1px solid #eee; padding: 15px; margin-top:20px;">
+                             <h3>Add New Keyword</h3>
+                             <input type="text" id="keyword-input" placeholder="Keyword or Phrase">
+                             <input type="text" id="reply-input" placeholder="Bot's Reply Message">
+                             <select id="match-type-select">
+                                <option value="exact">Exact Match</option>
+                                <option value="contains">Contains Match</option>
+                             </select>
+                             <button id="save-keyword-btn" data-clientid="${clientId}">Save Keyword</button>
+                        </div>
+                        <h3>Saved Keywords</h3>
+                        <div id="keywords-list">Loading...</div>`;
+                    
+                    try {
+                        const response = await fetch(`/api/keywords/${clientId}`, fetchOptions);
+                        if (!response.ok) throw new Error('Failed to fetch keywords.');
+                        const keywords = await response.json();
+                        const keywordsList = root.querySelector('#keywords-list');
+                        keywordsList.innerHTML = keywords.length ? '' : '<p class="center-text">No keywords defined for this device.</p>';
+                        keywords.forEach(k => {
+                            const item = document.createElement('div');
+                            item.className = 'keyword-item';
+                            item.innerHTML = `
+                                <span><strong>Keyword:</strong><br>${k.keyword}</span>
+                                <span><strong>Reply:</strong><br>${k.reply} (${k.match_type})</span>
+                                <div class="actions">
+                                    <button class="delete-btn delete-keyword-btn" data-clientid="${clientId}" data-keywordid="${k.id}">Delete</button>
+                                </div>`;
+                            keywordsList.appendChild(item);
+                        });
+                    } catch(error) {
+                        root.querySelector('#keywords-list').innerHTML = `<p style="color:red" class="center-text">${error.message}</p>`;
+                    }
+                };
+
+                const renderQR = (clientId, url) => {
+                    root.innerHTML = `
+                        <div class="center-text">
+                            <h2>Scan QR for: <strong>${clientId}</strong></h2>
+                            <img id="qrcode-image" src="${url}">
+                            <button class="back-to-dash">Back to Dashboard</button>
+                        </div>`;
+                };
+
+                // --- Socket Listeners ---
+                socket.on('statusUpdate', () => { if(root.querySelector('#device-list')) renderDashboard(); });
+                socket.on('qr', ({ clientId, url }) => renderQR(clientId, url));
+                socket.on('ready', ({ clientId }) => { alert(`Device '${clientId}' is connected!`); if(root.querySelector('#device-list')) renderDashboard(); });
+
+                // --- Initial Load ---
+                const initialLoad = async () => {
+                    try {
+                        const response = await fetch('/api/auth-status', fetchOptions);
+                        if (!response.ok) throw new Error('Auth check failed');
+                        const data = await response.json();
+                        data.loggedIn ? renderDashboard() : renderLogin();
+                    } catch (e) {
+                        console.error("Could not check auth status:", e);
+                        renderLogin();
+                    }
+                };
+
+                initialLoad();
             };
 
-            // --- Socket Listeners ---
-            socket.on('statusUpdate', () => { if(document.getElementById('device-list')) renderDashboard(); });
-            socket.on('qr', ({ clientId, url }) => renderQR(clientId, url));
-            socket.on('ready', ({ clientId }) => { alert(`Device '${clientId}' is connected!`); renderDashboard(); });
-
-            // --- Initial Load ---
-            (async () => {
-                const response = await fetch('/api/auth-status', fetchOptions);
-                const data = await response.json();
-                data.loggedIn ? renderDashboard() : renderLogin();
-            })();
+            // Start the application
+            initApp();
         });
     </script>
 </body>
