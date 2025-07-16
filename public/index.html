@@ -22,9 +22,8 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="view-root">
         <!-- Views will be rendered here by JavaScript -->
-        <div id="view-root"></div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -33,14 +32,59 @@
             const socket = io();
             const fetchOptions = { credentials: 'include' };
             const root = document.getElementById('view-root');
+            
+            // --- Event Delegation ---
+            root.addEventListener('click', async (e) => {
+                if (e.target.id === 'login-btn') handleLogin();
+                if (e.target.id === 'logout-btn') handleLogout();
+                if (e.target.id === 'add-device-btn') handleAddDevice();
+                if (e.target.id === 'qr-back-btn') renderDashboard();
+                if (e.target.id === 'back-to-dash') renderDashboard();
+                if (e.target.matches('.disconnect-btn')) handleDisconnect(e.target.dataset.id);
+                if (e.target.matches('.manage-keywords-btn')) renderKeywordsManager(e.target.dataset.id);
+            });
 
-            const renderLogin = () => { /* ... (Pehle jaisa hi) ... */ };
-            const renderDashboard = async () => { /* ... (Updated) ... */ };
-            const renderKeywordsManager = (clientId) => { /* ... (Updated) ... */ };
-            const renderQR = (clientId, url) => { /* ... (Updated) ... */ };
+            // --- Handlers ---
+            const handleLogin = async () => {
+                const usernameEl = document.getElementById('username');
+                const passwordEl = document.getElementById('password');
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: usernameEl.value, password: passwordEl.value }),
+                    ...fetchOptions
+                });
+                if (response.ok) renderDashboard();
+            };
+            const handleLogout = async () => {
+                await fetch('/logout', fetchOptions);
+                location.reload();
+            };
+            const handleAddDevice = () => {
+                const clientIdEl = document.getElementById('new-client-id');
+                const clientId = clientIdEl.value.trim();
+                if (clientId) {
+                    socket.emit('add-device', { clientId });
+                    clientIdEl.value = '';
+                }
+            };
+            const handleDisconnect = async (clientId) => {
+                if (confirm(`Are you sure you want to disconnect ${clientId}?`)) {
+                    await fetch(`/api/disconnect/${clientId}`, { method: 'POST', ...fetchOptions });
+                }
+            };
 
-            // NAYA: renderDashboard function
-            const renderDashboardUpdated = async () => {
+            // --- Render Functions ---
+            const renderLogin = () => {
+                root.innerHTML = `
+                    <div class="center-text">
+                        <h1>Login to Bot Panel</h1>
+                        <input type="text" id="username" placeholder="Username" value="admin">
+                        <input type="password" id="password" placeholder="Password" value="password123">
+                        <button id="login-btn">Login</button>
+                    </div>`;
+            };
+            const renderDashboard = async () => {
                 root.innerHTML = `
                     <button id="logout-btn" style="float:right;">Logout</button>
                     <h1>Device Dashboard</h1>
@@ -53,9 +97,6 @@
                     <h3>Existing Devices</h3>
                     <div id="device-list">Loading...</div>`;
 
-                document.getElementById('logout-btn').addEventListener('click', async () => { /* ... */ });
-                document.getElementById('add-device-btn').addEventListener('click', () => { /* ... */ });
-
                 const response = await fetch('/api/devices', fetchOptions);
                 const devices = await response.json();
                 const deviceList = document.getElementById('device-list');
@@ -64,7 +105,7 @@
                 devices.forEach(device => {
                     const el = document.createElement('div');
                     el.className = 'device-list-item';
-                    el.id = `device-${device.id}`; // Add ID for easy updates
+                    el.id = `device-${device.id}`;
                     el.innerHTML = `
                         <div>
                             <strong>${device.id}</strong><br>
@@ -76,75 +117,46 @@
                         </div>`;
                     deviceList.appendChild(el);
                 });
-
-                document.querySelectorAll('.manage-keywords-btn').forEach(btn => btn.addEventListener('click', (e) => renderKeywordsManager(e.target.dataset.id)));
-                document.querySelectorAll('.disconnect-btn').forEach(btn => btn.addEventListener('click', async (e) => {
-                    const clientId = e.target.dataset.id;
-                    if (confirm(`Are you sure you want to disconnect ${clientId}?`)) {
-                        await fetch(`/api/disconnect/${clientId}`, { method: 'POST', ...fetchOptions });
-                        // The status will update via socket, no need to refresh manually
-                    }
-                }));
             };
-
-            // NAYA: renderKeywordsManager function
-            const renderKeywordsManagerUpdated = (clientId) => {
-                root.innerHTML = `
+            const renderKeywordsManager = (clientId) => {
+                 root.innerHTML = `
                     <button id="back-to-dash"> ← Back to Dashboard</button>
                     <h2>Manage Keywords for: ${clientId}</h2>
-                    <!-- Keyword form and list will go here -->`;
-                document.getElementById('back-to-dash').addEventListener('click', renderDashboardUpdated);
-                // Keywords logic yahan aayega
+                    <!-- Keyword form and list will go here -->
+                `;
             };
-            
-            // --- Socket Listeners (Updated) ---
-            socket.on('statusUpdate', ({ clientId, status }) => {
-                const deviceEl = document.getElementById(`device-${clientId}`);
-                if (deviceEl) {
-                    // Refresh the whole dashboard to correctly show/hide buttons
-                    renderDashboardUpdated();
-                }
-            });
-
-            socket.on('qr', ({ clientId, url }) => {
+            const renderQR = (clientId, url) => {
                 root.innerHTML = `
                     <div class="center-text">
                         <h2>Scan QR for: ${clientId}</h2>
                         <img id="qrcode-image" src="${url}">
                         <button id="qr-back-btn">Back to Dashboard</button>
                     </div>`;
-                document.getElementById('qr-back-btn').addEventListener('click', renderDashboardUpdated);
-            });
-            
-            socket.on('ready', ({ clientId }) => {
-                alert(`Device '${clientId}' is connected and ready!`);
-                // Status update will handle the UI change
-            });
+            };
 
-            // Initial Load Logic
-            fetch('/api/auth-status', fetchOptions).then(res => res.json()).then(data => {
-                if (data.loggedIn) {
-                    renderDashboardUpdated();
-                } else {
-                    root.innerHTML = `
-                        <div class="center-text">
-                            <h1>Login to Bot Panel</h1>
-                            <input type="text" id="username" placeholder="Username" value="admin">
-                            <input type="password" id="password" placeholder="Password" value="password123">
-                            <button id="login-btn">Login</button>
-                            <p id="login-error" style="color:red; height: 20px;"></p>
-                        </div>`;
-                    document.getElementById('login-btn').addEventListener('click', async () => {
-                         const response = await fetch('/login', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username: username.value, password: password.value }),
-                            ...fetchOptions
-                        });
-                        if (response.ok) renderDashboardUpdated();
-                    });
+            // --- Socket Listeners ---
+            socket.on('statusUpdate', ({ clientId, status }) => {
+                // If dashboard is visible, re-render it to show updated status and buttons
+                if(document.getElementById('device-list')) {
+                    renderDashboard();
                 }
             });
+            socket.on('qr', ({ clientId, url }) => renderQR(clientId, url));
+            socket.on('ready', ({ clientId }) => {
+                alert(`Device '${clientId}' is connected and ready!`);
+                renderDashboard();
+            });
+
+            // --- Initial Load ---
+            (async () => {
+                try {
+                    const response = await fetch('/api/auth-status', fetchOptions);
+                    const data = await response.json();
+                    data.loggedIn ? renderDashboard() : renderLogin();
+                } catch (e) {
+                    renderLogin();
+                }
+            })();
         });
     </script>
 </body>
