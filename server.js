@@ -23,7 +23,7 @@ const DEVICES_CONFIG_PATH = path.join(__dirname, 'devices.json');
 
 // --- Gemini AI Setup ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
 
 // --- Helper Functions to read/write device config ---
 const readDeviceConfig = async () => {
