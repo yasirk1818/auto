@@ -5,20 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Bot Manager</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; color: #1c1e21; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .container { max-width: 800px; width: 100%; margin: 20px; padding: 24px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+        body { font-family: system-ui, sans-serif; background-color: #f0f2f5; color: #1c1e21; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; text-align: center; }
+        .container { max-width: 800px; width: 90%; padding: 24px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
         h1, h2 { border-bottom: 1px solid #dddfe2; padding-bottom: 15px; }
-        #status-box { padding: 12px; margin-bottom: 20px; border-radius: 6px; background-color: #e7f3ff; color: #1877f2; text-align: center; font-weight: bold; }
-        #qr-container { text-align: center; }
-        #qrcode { max-width: 300px; width: 100%; height: auto; margin-top: 20px; border: 1px solid #dddfe2; padding: 10px; border-radius: 8px;}
+        #status-box { padding: 12px; margin-bottom: 20px; border-radius: 6px; background-color: #e7f3ff; color: #1877f2; font-weight: bold; }
+        #qr-container img { max-width: 320px; width: 100%; height: auto; margin-top: 15px; border: 1px solid #dddfe2; padding: 8px; border-radius: 8px;}
         .hidden { display: none; }
-        /* Add other styles from previous example for form and keyword list */
-        .form-container { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 25px; }
-        .form-container input, .form-container select { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
-        #save-btn, #cancel-btn { padding: 12px 20px; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
-        #save-btn { background-color: #1877f2; } #cancel-btn { background-color: #6c757d; }
-        .keyword-item { display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; padding: 15px; border-bottom: 1px solid #dddfe2; align-items: center; }
-        .keyword-item .actions { display: flex; gap: 10px; }
+        /* Add other styles for form and keyword list */
+        .form-container { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 25px; text-align: left;}
+        .form-container input, .form-container select, .form-container button { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        .keyword-item { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; border-bottom: 1px solid #dddfe2; align-items: center; text-align: left; }
+        .keyword-item .actions { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }
     </style>
 </head>
 <body>
@@ -26,32 +23,19 @@
         <h1>WhatsApp Bot Manager</h1>
         <div id="status-box">Connecting to server...</div>
 
-        <!-- QR Code Section -->
+        <!-- This section will show the QR Code -->
         <div id="qr-container">
-            <p>Please scan the QR code with your WhatsApp app to connect.</p>
-            <img id="qrcode" src="" alt="QR Code will appear here">
+            <p>Please wait for the QR code to appear...</p>
+            <img id="qrcode-image" class="hidden" src="" alt="Scan this QR Code">
         </div>
 
-        <!-- Keywords Management Section -->
+        <!-- This section will show after successful login -->
         <div id="keywords-manager" class="hidden">
-            <h2>Keyword Manager</h2>
-            <div class="form-container">
-                <input type="hidden" id="edit-id">
-                <input type="text" id="keyword-input" placeholder="Keyword or Phrase">
-                <input type="text" id="reply-input" placeholder="Bot's Reply Message">
-                <select id="match-type-select">
-                    <option value="exact">Exact Match</option>
-                    <option value="contains">Contains Match</option>
-                </select>
-                <button id="save-btn">Add Keyword</button>
-                <button id="cancel-btn" style="display: none;">Cancel Edit</button>
-            </div>
-            <h2>Saved Keywords</h2>
-            <div id="keywords-list"></div>
+            <!-- Keyword management form and list will be here -->
         </div>
     </div>
 
-    <!-- Socket.IO Client Library -->
+    <!-- This must be here to connect to the backend -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -59,97 +43,44 @@
 
             const statusBox = document.getElementById('status-box');
             const qrContainer = document.getElementById('qr-container');
-            const qrcodeImg = document.getElementById('qrcode');
+            const qrcodeImage = document.getElementById('qrcode-image');
             const keywordsManager = document.getElementById('keywords-manager');
 
-            // --- Socket Event Listeners ---
+            // Listen for messages from the server
             socket.on('message', (msg) => {
                 statusBox.textContent = msg;
             });
 
+            // Listen for the 'qr' event from the server
             socket.on('qr', (url) => {
-                qrcodeImg.src = url;
-                qrContainer.classList.remove('hidden');
-                keywordsManager.classList.add('hidden');
+                qrcodeImage.src = url; // Set the image source to the QR code data
+                qrcodeImage.classList.remove('hidden');
+                keywordsManager.classList.add('hidden'); // Hide manager
             });
 
+            // Listen for the 'ready' event
             socket.on('ready', () => {
-                qrContainer.classList.add('hidden');
-                keywordsManager.classList.remove('hidden');
-                fetchKeywords(); // Fetch keywords once ready
+                statusBox.textContent = 'WhatsApp is connected! You can manage keywords now.';
+                qrContainer.classList.add('hidden'); // Hide QR container
+                loadKeywordsManager(); // Load the keywords section
             });
 
+            // Listen for disconnection
             socket.on('disconnected', () => {
-                statusBox.textContent = 'Client Disconnected. Please restart the server.';
-                qrContainer.classList.remove('hidden');
-                qrcodeImg.src = ''; // Clear QR code
+                statusBox.textContent = 'Client Disconnected. Please refresh the page to reconnect.';
                 keywordsManager.classList.add('hidden');
+                qrContainer.classList.remove('hidden');
             });
             
-            // --- Keyword Management functions (same as before) ---
-            const keywordsList = document.getElementById('keywords-list');
-            const saveBtn = document.getElementById('save-btn');
-            // ... all the other variables and functions for keyword management ...
-            // Paste the entire keyword management JavaScript from the previous `index.html` here.
-            // It starts from `const keywordsList = ...` to `fetchKeywords();`
-            
-            // For clarity, I'm re-pasting the keyword management JS here:
-            const cancelBtn = document.getElementById('cancel-btn');
-            const keywordInput = document.getElementById('keyword-input');
-            const replyInput = document.getElementById('reply-input');
-            const matchTypeSelect = document.getElementById('match-type-select');
-            const editIdInput = document.getElementById('edit-id');
-            const resetForm = () => { editIdInput.value = ''; keywordInput.value = ''; replyInput.value = ''; saveBtn.textContent = 'Add Keyword'; cancelBtn.style.display = 'none'; };
-            const fetchKeywords = async () => { /* ... same code as before ... */ };
-            saveBtn.addEventListener('click', async () => { /* ... same code as before ... */ });
-            cancelBtn.addEventListener('click', resetForm);
-            window.editKeyword = (id, keyword, reply, match_type) => { /* ... same code as before ... */ };
-            window.deleteKeyword = async (id) => { /* ... same code as before ... */ };
-
-            // I will paste the full JS for keywords management here for completeness
-            const fetchKeywordsFull = async () => {
-                const response = await fetch('/api/keywords');
-                const keywords = await response.json();
-                keywordsList.innerHTML = '';
-                keywords.forEach(k => {
-                    const item = document.createElement('div');
-                    item.className = 'keyword-item';
-                    item.innerHTML = `<span><strong>Keyword:</strong> ${k.keyword}</span><span><strong>Reply:</strong> ${k.reply}</span><div class="actions"><button onclick="editKeyword('${k.id}', '${k.keyword.replace(/'/g, "\\'")}', '${k.reply.replace(/'/g, "\\'")}', '${k.match_type}')">Edit</button><button onclick="deleteKeyword('${k.id}')">Delete</button></div>`;
-                    keywordsList.appendChild(item);
-                });
-            };
-
-            saveBtn.addEventListener('click', async () => {
-                const id = editIdInput.value;
-                const keyword = keywordInput.value.trim();
-                const reply = replyInput.value.trim();
-                const match_type = matchTypeSelect.value;
-                if (!keyword || !reply) return alert('Please fill all fields.');
-                const url = id ? `/api/keywords/${id}` : '/api/keywords';
-                const method = id ? 'PUT' : 'POST';
-                await fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword, reply, match_type }) });
-                resetForm();
-                fetchKeywordsFull();
-            });
-
-            window.editKeyword = (id, keyword, reply, match_type) => {
-                editIdInput.value = id;
-                keywordInput.value = keyword;
-                replyInput.value = reply;
-                matchTypeSelect.value = match_type;
-                saveBtn.textContent = 'Update Keyword';
-                cancelBtn.style.display = 'block';
-            };
-
-            window.deleteKeyword = async (id) => {
-                if (confirm('Are you sure?')) {
-                    await fetch(`/api/keywords/${id}`, { method: 'DELETE' });
-                    fetchKeywordsFull();
-                }
-            };
-            
-            // Re-assign the fetchKeywords function
-            window.fetchKeywords = fetchKeywordsFull;
+            function loadKeywordsManager() {
+                keywordsManager.classList.remove('hidden');
+                // You can add your keyword management html and logic here
+                keywordsManager.innerHTML = `
+                    <h2>Keyword Manager</h2>
+                    <p>Add, edit, or remove keywords for auto-reply.</p>
+                    <!-- Your form and list HTML would go here -->
+                `;
+            }
         });
     </script>
 </body>
